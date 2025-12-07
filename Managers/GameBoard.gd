@@ -1,219 +1,257 @@
 extends Node2D
 
-const ROWS = 4
-const COLS = 12
+# Board Constants
+const TILE_SIZE = 64
+const COLS = 6
+const ROWS = 5
 
-# State
-var grid: Dictionary = {} # Key: Vector2i, Value: Unit Node
-var current_turn: String = "P1"
+# Game State
+var grid: Dictionary = {} # Stores Unit nodes keyed by Vector2i(x,y)
+var current_turn: String = "P1" # "P1" or "P2"
 var selected_unit: Unit = null
-var highlighted_cells: Array[Vector2i] = [] # For drawing overlays
 
-# Visuals (Drag your TileMapLayer here in Inspector)
-@export var tile_map: TileMapLayer 
+# Highlights
+var highlighted_moves: Array[Vector2i] = []
+var highlighted_attacks: Array[Vector2i] = []
+
+# Resources
+var unit_scene = preload("res://Unit.tscn") # Assumes you have a Unit scene
 
 func _ready():
-	# Wait one frame to ensure children are ready, then init
-	call_deferred("initialize_board")
+	# --- Initialize Test Board ---
+	# Player 1 (Left side)
+	spawn_unit(0, 2, "P1", "WARRIOR")
+	spawn_unit(1, 1, "P1", "ARCHER")
+	spawn_unit(1, 3, "P1", "STRATEGIST")
+	
+	# Player 2 (Right side)
+	spawn_unit(5, 2, "P2", "TANK")
+	spawn_unit(4, 1, "P2", "SUPPORT")
+	spawn_unit(4, 3, "P2", "WARRIOR")
+	
+	check_synergies()
+	queue_redraw()
 
-func initialize_board():
-	# Snap all children units to the grid
-	# IMPORTANT: You must have a Node2D named "Units" holding the characters
-	var unit_container = get_node_or_null("Units")
-	if not unit_container:
-		print("Error: No 'Units' node found! Create a Node2D named 'Units' and put characters inside.")
-		return
+func spawn_unit(x: int, y: int, player_id: String, type: String):
+	var unit = unit_scene.instantiate()
+	unit.grid_pos = Vector2i(x, y)
+	unit.player_id = player_id
+	unit.unit_class = type
+	
+	# Set visual position
+	unit.position = calculate_world_position(unit.grid_pos)
+	
+	# Basic Stats (Simplified)
+	unit.max_hp = 10
+	unit.current_hp = 10
+	unit.current_qi = 1
+	
+	# Combat Stats (New)
+	unit.attack_power = 4
+	unit.heal_power = 3
+	
+	# Optional: Differentiate stats by class
+	if type == "TANK":
+		unit.max_hp = 15
+		unit.current_hp = 15
+		unit.attack_power = 2
+	elif type == "STRATEGIST":
+		unit.attack_power = 6 # Higher base, but AoE scales down
+		
+	add_child(unit)
+	grid[Vector2i(x, y)] = unit
 
-	for child in unit_container.get_children():
-		if child is Unit:
-			var cell = tile_map.local_to_map(child.position)
-			child.grid_pos = cell
-			grid[cell] = child
-			# Center them visually
-			child.position = tile_map.map_to_local(cell)
+func calculate_world_position(grid_pos: Vector2i) -> Vector2:
+	return Vector2(grid_pos.x * TILE_SIZE, grid_pos.y * TILE_SIZE) + Vector2(TILE_SIZE/2.0, TILE_SIZE/2.0)
 
+# --- DRAWING ---
 func _draw():
-	# DEBUG: Draw highlights for valid moves (Cyan) or attacks (Red)
-	for cell in highlighted_cells:
-		var center = tile_map.map_to_local(cell)
-		# Draw a semi-transparent square 
-		# Size is hardcoded to 48x48 here, adjust to match your tile size!
-		var rect = Rect2(center - Vector2(24, 24), Vector2(48, 48))
-		var color = Color(0.0, 1.0, 1.0, 0.3) # Default Cyan (Move)
+	# 1. Draw Grid Lines
+	for x in range(COLS + 1):
+		draw_line(Vector2(x * TILE_SIZE, 0), Vector2(x * TILE_SIZE, ROWS * TILE_SIZE), Color.GRAY)
+	for y in range(ROWS + 1):
+		draw_line(Vector2(0, y * TILE_SIZE), Vector2(COLS * TILE_SIZE, y * TILE_SIZE), Color.GRAY)
+
+	# 2. Draw Highlights
+	if selected_unit:
+		# Selection Box
+		draw_rect(Rect2(selected_unit.grid_pos * TILE_SIZE, Vector2(TILE_SIZE, TILE_SIZE)), Color.GREEN, false, 3.0)
 		
-		# If it contains an enemy, make it Red (Attack)
-		if grid.has(cell):
-			if grid[cell].player_id != current_turn:
-				color = Color(1.0, 0.2, 0.2, 0.3)
-				
-		draw_rect(rect, color, true)
-		draw_rect(rect, color.lightened(0.5), false, 2.0) # Border
-
-# --- MECHANIC 1: ZONE OF CONTROL (ZOC) ---
-# Returns true if an enemy is Orthogonally adjacent
-func is_engaged(unit: Unit) -> bool:
-	var directions = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
-	for dir in directions:
-		var neighbor_pos = unit.grid_pos + dir
-		if grid.has(neighbor_pos):
-			var neighbor = grid[neighbor_pos]
-			if neighbor.player_id != unit.player_id:
-				return true # Locked!
-	return false
-
-# --- MECHANIC 2: MOVEMENT (BFS) ---
-func get_valid_moves(unit: Unit) -> Array[Vector2i]:
-	if unit.has_moved: return []
-	
-	# ZOC LOCK: If adjacent to enemy at start of turn, CANNOT move.
-	if is_engaged(unit):
-		print("Unit Locked by ZOC")
-		return []
-
-	var valid: Array[Vector2i] = []
-	# Queue stores Dictionary: { "pos": Vector2i, "dist": int }
-	var queue = [{ "pos": unit.grid_pos, "dist": 0 }]
-	var visited = { unit.grid_pos: true }
-	
-	while queue.size() > 0:
-		var current = queue.pop_front()
-		
-		if current.dist > 0:
-			valid.append(current.pos)
+		# Valid Moves (Blue)
+		for move in highlighted_moves:
+			draw_rect(Rect2(move * TILE_SIZE, Vector2(TILE_SIZE, TILE_SIZE)), Color(0, 0, 1, 0.3), true)
 			
-		if current.dist >= unit.move_range:
-			continue
-			
-		for dir in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-			var next = current.pos + dir
-			
-			# Boundary Check
-			if next.x < 0 or next.x >= COLS or next.y < 0 or next.y >= ROWS:
-				continue
-			
-			# Collision: Must be empty
-			if grid.has(next):
-				continue
-				
-			if not visited.has(next):
-				visited[next] = true
-				queue.append({ "pos": next, "dist": current.dist + 1 })
-				
-	return valid
-
-# --- MECHANIC 3: ATTACK RANGES ---
-func get_valid_attacks(unit: Unit) -> Array[Vector2i]:
-	if unit.has_acted: return []
-	var attacks: Array[Vector2i] = []
-	
-	if unit.unit_class == "WARRIOR":
-		# Melee: Orthogonal only
-		for dir in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-			var target_pos = unit.grid_pos + dir
-			if is_valid_target(target_pos, unit.player_id):
-				attacks.append(target_pos)
-				
-	elif unit.unit_class == "ARCHER":
-		# Arcing Shot: Entire Row, Ignores Blockers
-		var r = unit.grid_pos.y
-		for c in range(COLS):
-			var target_pos = Vector2i(c, r)
-			if is_valid_target(target_pos, unit.player_id):
-				attacks.append(target_pos)
-				
-	return attacks
-
-func is_valid_target(pos: Vector2i, attacker_id: String) -> bool:
-	if grid.has(pos):
-		var target = grid[pos]
-		return target.player_id != attacker_id
-	return false
+		# Valid Attacks/Targets (Red)
+		for attack in highlighted_attacks:
+			draw_rect(Rect2(attack * TILE_SIZE, Vector2(TILE_SIZE, TILE_SIZE)), Color(1, 0, 0, 0.3), true)
 
 # --- INPUT HANDLING ---
 func _unhandled_input(event):
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var cell = tile_map.local_to_map(get_global_mouse_position())
-		handle_click(cell)
+		var clicked_cell = Vector2i(event.position) / TILE_SIZE
+		
+		# Bounds check
+		if clicked_cell.x >= 0 and clicked_cell.x < COLS and clicked_cell.y >= 0 and clicked_cell.y < ROWS:
+			handle_click(clicked_cell)
 
 func handle_click(cell: Vector2i):
 	# 1. Select Own Unit
 	if grid.has(cell):
 		var unit = grid[cell]
-		if unit.player_id == current_turn:
+		# If clicking our own unit that hasn't acted yet
+		if unit.player_id == current_turn and not unit.has_acted:
 			selected_unit = unit
-			
-			# UPDATE VISUALS: Combine Moves + Attacks for highlighting
-			highlighted_cells = get_valid_moves(unit) + get_valid_attacks(unit)
-			queue_redraw() # Trigger _draw()
+			# Calculate Options
+			highlighted_moves = get_valid_formation_moves(unit)
+			highlighted_attacks = TargetingSystem.get_valid_attacks(unit, grid, COLS)
+			queue_redraw()
 			return
 
-	# 2. Action (Move or Attack)
-	if selected_unit:
-		# Try Move
-		var moves = get_valid_moves(selected_unit)
-		if cell in moves:
-			perform_move(selected_unit, cell)
-			return
-			
-		# Try Attack
-		var attacks = get_valid_attacks(selected_unit)
-		if cell in attacks:
-			perform_attack(selected_unit, grid[cell])
-			return
+		# 2. Clicking an Enemy (Attack)
+		if selected_unit and unit.player_id != current_turn:
+			if cell in highlighted_attacks:
+				perform_attack(selected_unit, unit)
+				return
+		
+		# 3. Clicking an Ally (Support/Buff)
+		if selected_unit and unit.player_id == current_turn and unit != selected_unit:
+			if selected_unit.unit_class == "SUPPORT" and cell in highlighted_attacks:
+				perform_support(selected_unit, unit)
+				return
+		
+		# 4. Clicking an Ally (Swap Position)
+		if selected_unit and unit.player_id == current_turn and unit != selected_unit:
+			if cell in highlighted_moves:
+				perform_formation_move(selected_unit, cell)
+				return
+
+	# 5. Move to Empty Space
+	elif selected_unit and not grid.has(cell):
+		if cell in highlighted_moves:
+			perform_formation_move(selected_unit, cell)
+
+# --- MOVEMENT LOGIC ---
+func get_valid_formation_moves(unit: Unit) -> Array[Vector2i]:
+	if unit.current_qi <= 0: return []
 	
-	# Deselect if clicking empty space
-	selected_unit = null
-	highlighted_cells = []
+	var moves: Array[Vector2i] = []
+	# Simple adjacent movement (Cardinal directions)
+	var directions = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
+	
+	for d in directions:
+		var target = unit.grid_pos + d
+		if target.x >= 0 and target.x < COLS and target.y >= 0 and target.y < ROWS:
+			moves.append(target)
+			
+	return moves
+
+func perform_formation_move(unit: Unit, target_cell: Vector2i):
+	unit.current_qi -= 1
+
+	if grid.has(target_cell):
+		# SWAP logic (Formation change)
+		var other_unit = grid[target_cell]
+		
+		# Update Grid Dictionary
+		grid[unit.grid_pos] = other_unit
+		grid[target_cell] = unit
+		
+		# Update Internal Positions
+		var temp_pos = unit.grid_pos
+		unit.grid_pos = target_cell
+		other_unit.grid_pos = temp_pos
+		
+		# Update Visuals
+		unit.position = calculate_world_position(unit.grid_pos)
+		other_unit.position = calculate_world_position(other_unit.grid_pos)
+		
+	else:
+		# MOVE logic (Empty tile)
+		grid.erase(unit.grid_pos)
+		grid[target_cell] = unit
+		unit.grid_pos = target_cell
+		unit.position = calculate_world_position(unit.grid_pos)
+
+	check_synergies()
+	
+	# Update highlights for new position
+	highlighted_moves = get_valid_formation_moves(unit)
+	highlighted_attacks = TargetingSystem.get_valid_attacks(unit, grid, COLS)
 	queue_redraw()
 
-func perform_move(unit: Unit, cell: Vector2i):
-	grid.erase(unit.grid_pos)
-	unit.grid_pos = cell
-	grid[cell] = unit
-	
-	# Visual Tween
-	var tween = create_tween()
-	tween.tween_property(unit, "position", tile_map.map_to_local(cell), 0.2)
-	
-	unit.has_moved = true
-	
-	# Clear highlights after move
-	selected_unit = null
-	highlighted_cells = []
-	queue_redraw()
-
+# --- COMBAT LOGIC ---
 func perform_attack(attacker: Unit, defender: Unit):
-	var damage = 4 # Flat damage for now
-	defender.take_damage(damage)
+	var damage = attacker.attack_power
 	
-	attacker.has_acted = true
-	attacker.has_moved = true # Attacking ends turn
-	attacker.modulate = Color(0.5, 0.5, 0.5) # Grey out
+	if attacker.unit_class == "STRATEGIST":
+		# Strategist hits EVERYONE in row for reduced damage (e.g., 50% of ATK)
+		damage = ceil(attacker.attack_power * 0.5)
+		
+		var targets = TargetingSystem.get_all_enemies_in_row(defender.grid_pos.y, attacker.player_id, grid, COLS)
+		for t_pos in targets:
+			if grid.has(t_pos): grid[t_pos].take_damage(damage)
+	
+	elif attacker.unit_class == "ARCHER":
+		# Archer: Check obstruction using TargetingSystem
+		if TargetingSystem.is_shot_obstructed(attacker, defender, grid):
+			damage = ceil(attacker.attack_power * 0.5) # 50% damage penalty
+			print("Shot Obstructed! Reduced Damage.")
+		else:
+			print("Clean Shot!")
+		defender.take_damage(damage)
+		
+	else:
+		# Warrior/Tank/Standard Melee
+		defender.take_damage(damage)
+	
+	finalize_action(attacker)
+
+func perform_support(healer: Unit, target: Unit):
+	# Use healer's heal_power stat
+	target.current_hp = min(target.current_hp + healer.heal_power, target.max_hp)
+	print("Healed unit at ", target.grid_pos)
+	finalize_action(healer)
+
+func finalize_action(unit: Unit):
+	unit.has_acted = true
+	unit.modulate = Color.GRAY
 	
 	selected_unit = null
-	highlighted_cells = []
+	highlighted_moves = []
+	highlighted_attacks = []
 	queue_redraw()
-	
-	# Check death
-	if defender.current_hp <= 0:
-		grid.erase(defender.grid_pos)
+	check_synergies()
+
+# --- PASSIVES & SYNERGIES ---
+func check_synergies():
+	# First, reset colors of non-acted units
+	for pos in grid:
+		if not grid[pos].has_acted:
+			grid[pos].modulate = Color.WHITE
+			
+	# Check horizontal adjacencies for "Formation Bonding"
+	for pos in grid:
+		var unit = grid[pos]
+		# If there is a right-neighbor of the same team
+		if grid.has(pos + Vector2i.RIGHT) and grid[pos + Vector2i.RIGHT].player_id == unit.player_id:
+			# Visual feedback for synergy
+			unit.modulate = Color(1.0, 0.84, 0.0) # Gold
+			grid[pos + Vector2i.RIGHT].modulate = Color(1.0, 0.84, 0.0)
 
 # --- TURN MANAGEMENT ---
 func end_turn():
-	# Switch Player
-	if current_turn == "P1":
-		current_turn = "P2"
-	else:
-		current_turn = "P1"
+	current_turn = "P2" if current_turn == "P1" else "P1"
+	print("Turn Changed: ", current_turn)
 	
-	print("Turn Ended. New Turn: " + current_turn)
-	
-	# Reset flags for new active player
-	for unit in grid.values():
-		if unit.player_id == current_turn:
-			unit.start_turn()
-			
-	# Deselect
+	# Reset Units for new turn
+	for pos in grid:
+		var unit = grid[pos]
+		unit.has_acted = false
+		unit.current_qi = 1 # Recharge Movement Resource
+		unit.modulate = Color.WHITE
+		
 	selected_unit = null
-	highlighted_cells = []
+	highlighted_moves = []
+	highlighted_attacks = []
+	check_synergies()
 	queue_redraw()
