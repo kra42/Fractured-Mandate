@@ -14,3 +14,8 @@ config/name="FracturedMandate"
 run/main_scene="uid://dwoe6jkvoh0xq"
 config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
+
+[display]
+
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
