@@ -1,65 +1,88 @@
 class_name Unit
 extends Node2D
 
-# --- CORE IDENTITY ---
+signal log_event(text: String)
+
 var grid_pos: Vector2i
 var player_id: String
 var unit_class: String
 
-# --- PRIMARY RESOURCES ---
 var max_hp: int = 10
 var current_hp: int = 10
+var max_qi: int = 3
+var current_qi: int = 1 
 
-var max_qi: int = 3      # Max energy/movement points
-var current_qi: int = 1  # Current energy available
+const COST_MOVE = 1
+const COST_ADVANCED = 2
+const COST_ULTIMATE = 5
 
-# --- OFFENSIVE STATS ---
 var attack_power: int = 4
-
-# --- UTILITY STATS ---
-# Determines turn order (Higher = Acts earlier)
 var initiative: int = 10 
-
-# --- DEFENSIVE STATS ---
-# Resistance percentages or flat reduction (0 = 0%)
-var resist: Dictionary = {
-	"phys": 0,
-	"fire": 0,
-	"poison": 0
-}
-
-# --- STATES ---
+var resist: Dictionary = { "phys": 0, "fire": 0, "poison": 0 }
 var has_acted: bool = false
 
-# --- VIRTUAL SKILL FUNCTIONS (Override in Hero Scripts) ---
+# --- PUBLIC API (Gatekeepers) ---
 
-# 1. PASSIVE
-# Triggered automatically by GameBoard events (e.g., "turn_start", "on_hit", "hp_low")
-func activate_passive(trigger: String, context: Dictionary = {}) -> void:
-	pass
+func try_use_basic_attack(target: Unit) -> bool:
+	_perform_basic_attack(target)
+	return true
 
-# 2. BASIC ATTACK
-# The standard attack. Usually generates Qi or is free.
-func use_basic_attack(target: Unit) -> void:
-	# Default: Deal damage based on attack power
+func try_use_advanced_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
+	# 1. Ask the unit "Can you afford this?" (Polymorphic check)
+	if not _can_afford_skill("ADVANCED", COST_ADVANCED):
+		log_event.emit("%s cannot afford Advanced Skill." % name)
+		return false
+	
+	# 2. Try to perform logic
+	if _perform_advanced_skill(target, grid, cols):
+		# 3. Pay the cost (Polymorphic payment)
+		_pay_skill_cost("ADVANCED", COST_ADVANCED)
+		return true
+	
+	return false
+
+func try_use_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
+	if not _can_afford_skill("ULTIMATE", COST_ULTIMATE):
+		log_event.emit("%s cannot afford Ultimate." % name)
+		return false
+	
+	if _perform_ultimate_skill(target, grid, cols):
+		_pay_skill_cost("ULTIMATE", COST_ULTIMATE)
+		return true
+		
+	return false
+
+# --- VIRTUAL LOGIC (Override for effects) ---
+
+func _perform_basic_attack(target: Unit) -> void:
+	log_event.emit(name + " attacks " + target.name)
 	target.take_damage(attack_power)
 
-# 3. ADVANCED SKILL
-# A secondary skill. Usually has a cooldown or low Qi cost.
-func use_advanced_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
-	print("Unit has no advanced skill.")
+func _perform_advanced_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
+	return false 
+
+func _perform_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
 	return false
 
-# 4. ULTIMATE SKILL
-# The signature move. High impact, usually costs Qi.
-func use_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
-	print("Unit has no ultimate skill.")
-	return false
+# --- VIRTUAL COSTS (Override for custom resources) ---
+
+# Default behavior: Everything costs Qi
+func _can_afford_skill(type: String, cost: int) -> bool:
+	return current_qi >= cost
+
+func _pay_skill_cost(type: String, cost: int) -> void:
+	current_qi -= cost
+	# log_event.emit("%s spent %d Qi." % [name, cost])
 
 # --- STANDARD BEHAVIOR ---
+func on_turn_start() -> void:
+	if current_qi < max_qi:
+		current_qi += 1
+		log_event.emit("%s gained 1 Qi. (%d/%d)" % [name, current_qi, max_qi])
+
 func take_damage(amount: int):
-	# Future: Calculate mitigation using resist["phys"] here
 	current_hp -= amount
-	print(unit_class, " took ", amount, " damage. HP: ", current_hp)
+	log_event.emit("%s took %d damage. HP: %d" % [name, amount, current_hp])
 	if current_hp <= 0:
-		queue_free() # Simplified death
+		log_event.emit(name + " was defeated!")
+		queue_free()

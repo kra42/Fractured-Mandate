@@ -1,4 +1,3 @@
-# Save this file at: res://Heroes/Hero_SoldierDummy.gd
 extends Unit
 
 func _ready():
@@ -20,17 +19,26 @@ func _ready():
 
 # --- SKILLS ---
 
-# Dummies only have a basic attack
 func use_basic_attack(target: Unit) -> void:
-	print("Soldier Dummy pokes with spear.")
+	print("Soldier Dummy pokes ", target.name, " with spear.")
 	target.take_damage(attack_power)
 
-# Dummies fail at advanced skills
 func use_advanced_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
 	print("Soldier Dummy tries to concentrate but fails.")
 	return false
 
-# Dummies have no ultimate
 func use_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
 	print("Soldier Dummy looks confused.")
 	return false
+
+# --- AI LOGIC ---
+# Soldiers attack the FIRST enemy they see in their row.
+func ai_take_turn(grid: Dictionary, cols: int) -> void:
+	# 1. Find target (Front-line only)
+	var target_pos = TargetingSystem.get_enemy_in_row(grid_pos.y, player_id, "FIRST", grid, cols)
+	
+	if target_pos != Vector2i(-1, -1):
+		var target = grid[target_pos]
+		use_basic_attack(target)
+	else:
+		print("Soldier Dummy sees no target and waits.")

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bvjpiu03unwig"
-path="res://.godot/imported/OIG4-1.jpg-82aee367f1035bcf39279b53418d73c0.ctex"
+uid="uid://ddl1eg7fkheo2"
+path="res://.godot/imported/Soldier_Dummy.png-a974fe91d3d54152bfdb2c500a0ca945.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Images_Heroes/OIG4-1.jpg"
-dest_files=["res://.godot/imported/OIG4-1.jpg-82aee367f1035bcf39279b53418d73c0.ctex"]
+source_file="res://Images_Heroes/Soldier_Dummy.png"
+dest_files=["res://.godot/imported/Soldier_Dummy.png-a974fe91d3d54152bfdb2c500a0ca945.ctex"]
 
 [params]
 
