@@ -48,7 +48,9 @@ func _ready():
 	add_child(turn_manager)
 	turn_manager.turn_changed.connect(_on_active_unit_changed)
 	turn_manager.ai_turn_requested.connect(_on_ai_turn_requested)
-	turn_manager.round_started.connect(func(r): game_ui.log_message("--- ROUND %d START ---" % r))
+	
+	# CHANGED: Connect to a real function to handle logic, not just logging
+	turn_manager.round_started.connect(_on_round_started)
 	
 	call_deferred("_setup_battle")
 
@@ -83,19 +85,24 @@ func _spawn_unit(x: int, y: int, team: String, hero_id: String, index: int = 1):
 	
 	unit.position = grid_manager.grid_to_world(pos)
 	unit.log_event.connect(_on_unit_log_event)
-	
-	# Connect to tree_exiting to handle death cleanup
 	unit.tree_exiting.connect(func(): _on_unit_died(unit))
-	
 	_scale_unit_sprite(unit)
 
 func _on_unit_died(unit: Unit):
-	# Remove from grid so targeting doesn't find it
 	if grid_manager:
 		grid_manager.remove_unit(unit)
 	_refresh_visuals()
 
 # --- TURN LOGIC ---
+
+# NEW: Reset unit states when a new round begins
+func _on_round_started(round_num: int):
+	game_ui.log_message("--- ROUND %d START ---" % round_num)
+	
+	for unit in grid_manager.get_all_units():
+		if is_instance_valid(unit):
+			unit.has_acted = false
+			unit.modulate = Color.WHITE
 
 func _on_active_unit_changed(active_unit: Unit):
 	game_ui.update_turn_queue(turn_manager.turn_queue, active_unit)
@@ -132,7 +139,7 @@ func _unhandled_input(event):
 
 func handle_click(cell: Vector2i):
 	var active_unit = turn_manager.get_current_unit()
-	if not active_unit or active_unit.player_id != TurnManager.TEAM_PLAYER: return
+	if not is_instance_valid(active_unit) or active_unit.player_id != TurnManager.TEAM_PLAYER: return
 
 	var clicked_unit = grid_manager.get_unit_at(cell)
 
@@ -150,7 +157,6 @@ func handle_click(cell: Vector2i):
 			if active_unit.unit_class == "SUPPORT" and cell in highlighted_attacks:
 				perform_support(active_unit, clicked_unit)
 				return
-			
 			if cell in highlighted_moves:
 				perform_formation_move(active_unit, cell)
 				return
