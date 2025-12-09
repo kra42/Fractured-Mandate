@@ -9,6 +9,9 @@ func _ready():
 	attack_power = 5
 	initiative = 12 
 	resist = { "phys": 10, "fire": 0, "poison": 0 }
+	
+	# CRITICAL FIX: Call parent _ready() to setup UI
+	super()
 
 func activate_passive(trigger: String, context: Dictionary = {}) -> void:
 	if trigger == "on_attack":

@@ -30,63 +30,96 @@ var qi_container: HBoxContainer
 # LOAD THE REAL TEXTURE
 var qi_texture: Texture2D = load("res://Image_Icons/qi.png")
 
+# Layout Settings
+const UI_WIDTH = 80
+const UI_HEIGHT_OFFSET = 100 # How high above the pivot the UI floats
+
 func _ready():
 	_setup_overhead_ui()
 
 func _process(delta):
 	# FORCE VISIBILITY FIX:
-	# If we use set_as_top_level(true), the container ignores parent transform.
-	# We must manually sync its position to the unit.
+	# Keep the UI centered above the unit
 	if overhead_container:
-		# Keep it above the unit. 
-		# Adjust Y offset (-80) based on your tile/sprite size.
-		overhead_container.global_position = global_position + Vector2(-40, -80)
-		overhead_container.global_scale = Vector2(1, 1) # Ensure 1:1 scale
+		# Center horizontally: -UI_WIDTH / 2
+		# Float vertically: -UI_HEIGHT_OFFSET
+		var center_offset = Vector2(-UI_WIDTH / 2.0, -UI_HEIGHT_OFFSET)
+		overhead_container.global_position = global_position + center_offset
+		overhead_container.global_scale = Vector2(1, 1) # Prevent UI from scaling with unit animations
 
 func _setup_overhead_ui():
 	# 1. Container Node 
 	overhead_container = Node2D.new()
-	# Detach from parent transform so it doesn't shrink with the unit sprite
 	overhead_container.set_as_top_level(true) 
-	overhead_container.z_index = 100 # Extreme Z-Index to be sure
+	overhead_container.z_index = 100 
 	add_child(overhead_container)
 	
-	# The actual layout container
+	# 2. Main Layout (Vertical Stack)
 	var layout = VBoxContainer.new()
-	# Position is now relative to the overhead_container (which is at unit pos)
-	layout.position = Vector2.ZERO 
-	layout.custom_minimum_size = Vector2(80, 0)
+	layout.custom_minimum_size = Vector2(UI_WIDTH, 0)
 	layout.add_theme_constant_override("separation", 2)
+	layout.alignment = BoxContainer.ALIGNMENT_CENTER
 	overhead_container.add_child(layout)
 
-	# 2. HP ROW (Bar + Text)
-	var hp_row = HBoxContainer.new()
-	layout.add_child(hp_row)
+	# Optional: Add a semi-transparent background behind the whole UI for readability
+	var bg_panel = PanelContainer.new()
+	var bg_style = StyleBoxFlat.new()
+	bg_style.bg_color = Color(0, 0, 0, 0.3) # Subtle shadow box
+	bg_style.set_corner_radius_all(4)
+	bg_style.expand_margin_left = 4
+	bg_style.expand_margin_right = 4
+	bg_style.expand_margin_top = 4
+	bg_style.expand_margin_bottom = 4
+	bg_panel.add_theme_stylebox_override("panel", bg_style)
 	
+	# We reparent the layout to be inside this background panel, 
+	# then add the panel to overhead_container
+	overhead_container.add_child(bg_panel)
+	bg_panel.add_child(layout)
+
+	# 3. HP BAR (Top)
 	overhead_bar = ProgressBar.new()
-	overhead_bar.custom_minimum_size = Vector2(50, 10)
+	overhead_bar.custom_minimum_size = Vector2(UI_WIDTH, 14)
 	overhead_bar.show_percentage = false
-	overhead_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	
-	var bg = StyleBoxFlat.new()
-	bg.bg_color = Color(0, 0, 0, 0.5)
-	overhead_bar.add_theme_stylebox_override("background", bg)
-	var fill = StyleBoxFlat.new()
-	fill.bg_color = Color(0.2, 0.8, 0.2) 
-	overhead_bar.add_theme_stylebox_override("fill", fill)
+	# HP Bar Styling
+	var style_bg = StyleBoxFlat.new()
+	style_bg.bg_color = Color(0.1, 0.1, 0.1, 0.8)
+	style_bg.border_width_bottom = 2
+	style_bg.border_width_top = 2
+	style_bg.border_width_left = 2
+	style_bg.border_width_right = 2
+	style_bg.border_color = Color(0, 0, 0)
+	overhead_bar.add_theme_stylebox_override("background", style_bg)
 	
-	hp_row.add_child(overhead_bar)
+	var style_fill = StyleBoxFlat.new()
+	style_fill.bg_color = Color(0.2, 0.8, 0.2) 
+	style_fill.border_width_bottom = 2
+	style_fill.border_width_top = 2
+	style_fill.border_width_left = 2
+	style_fill.border_width_right = 2
+	style_fill.border_color = Color(0,0,0,0) # Transparent border for fill
+	overhead_bar.add_theme_stylebox_override("fill", style_fill)
 	
+	layout.add_child(overhead_bar)
+	
+	# 4. HP Text (Overlay on top of bar)
 	overhead_label = Label.new()
 	overhead_label.text = "10/10"
-	overhead_label.add_theme_font_size_override("font_size", 14)
+	overhead_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	overhead_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	overhead_label.add_theme_font_size_override("font_size", 10)
 	overhead_label.add_theme_constant_override("outline_size", 4)
 	overhead_label.add_theme_color_override("font_outline_color", Color.BLACK)
-	hp_row.add_child(overhead_label)
+	
+	# Use a Control to center the label exactly on top of the bar
+	overhead_bar.add_child(overhead_label)
+	overhead_label.set_anchors_preset(Control.PRESET_FULL_RECT)
 
-	# 3. QI ROW (Icons)
+	# 5. QI ROW (Bottom - Icons)
 	qi_container = HBoxContainer.new()
 	qi_container.alignment = BoxContainer.ALIGNMENT_CENTER
+	qi_container.add_theme_constant_override("separation", 1) # Tight spacing
 	layout.add_child(qi_container)
 	
 	_update_visuals()
@@ -98,11 +131,11 @@ func _update_visuals():
 		overhead_bar.value = current_hp
 		overhead_label.text = "%d/%d" % [current_hp, max_hp]
 		
-		# Dynamic Color
+		# Dynamic Color (Green -> Yellow -> Red)
 		var pct = float(current_hp) / float(max_hp) if max_hp > 0 else 0
 		var style = overhead_bar.get_theme_stylebox("fill").duplicate()
-		if pct < 0.3: style.bg_color = Color(0.9, 0.1, 0.1) # Red
-		elif pct < 0.6: style.bg_color = Color(0.9, 0.9, 0.1) # Yellow
+		if pct < 0.3: style.bg_color = Color(0.9, 0.2, 0.2) # Red
+		elif pct < 0.6: style.bg_color = Color(0.9, 0.8, 0.1) # Yellow
 		else: style.bg_color = Color(0.2, 0.8, 0.2) # Green
 		overhead_bar.add_theme_stylebox_override("fill", style)
 
@@ -111,18 +144,26 @@ func _update_visuals():
 		for child in qi_container.get_children():
 			child.queue_free()
 		
-		for i in range(current_qi):
+		for i in range(max_qi):
 			var icon = TextureRect.new()
 			if qi_texture:
 				icon.texture = qi_texture
 			else:
-				var img = Image.create(16, 16, false, Image.FORMAT_RGBA8)
+				# Fallback square
+				var img = Image.create(8, 8, false, Image.FORMAT_RGBA8)
 				img.fill(Color(0.2, 0.6, 1.0))
 				icon.texture = ImageTexture.create_from_image(img)
-				
-			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			icon.custom_minimum_size = Vector2(24, 24) # Ensure icons are big enough
+			
 			icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			icon.custom_minimum_size = Vector2(16, 16)
+			icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			
+			# Dim empty Qi slots instead of hiding them (Standard RPG practice)
+			if i >= current_qi:
+				icon.modulate = Color(0.2, 0.2, 0.2, 0.5) # Grayed out
+			else:
+				icon.modulate = Color(1, 1, 1, 1) # Bright
+				
 			qi_container.add_child(icon)
 
 # --- PUBLIC API ---
