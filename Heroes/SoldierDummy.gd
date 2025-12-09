@@ -6,7 +6,7 @@ func _ready():
 	# Weak Stats
 	max_hp = 8
 	current_hp = 8
-	max_qi = 2
+	max_qi = 0
 	current_qi = 0
 	
 	# Weak Attack
@@ -16,6 +16,7 @@ func _ready():
 	initiative = 5 
 	
 	resist = { "phys": 0, "fire": 0, "poison": 0 }
+	super()
 
 # --- SKILLS ---
 

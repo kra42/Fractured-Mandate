@@ -4,11 +4,12 @@ func _ready():
 	unit_class = "ARCHER"
 	max_hp = 6
 	current_hp = 6
-	max_qi = 2
+	max_qi = 0
 	current_qi = 0
 	attack_power = 3 
 	initiative = 8
 	resist = { "phys": 0, "fire": 0, "poison": 0 }
+	super()
 
 func use_basic_attack(target: Unit) -> void:
 	if not target:
