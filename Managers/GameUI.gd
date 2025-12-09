@@ -14,8 +14,9 @@ var lbl_qi_text: Label
 var btn_basic: Button
 var btn_adv: Button
 var btn_ult: Button
-var btn_details: Button # NEW
+var btn_details: Button 
 var btn_end: Button
+var btn_toggle_states: Button # NEW Toggle Button
 
 var log_box: TextEdit 
 var hbox_turn_queue: HBoxContainer
@@ -100,13 +101,22 @@ func _setup_ui():
 	btn_details.disabled = true
 	vbox.add_child(btn_details)
 
-	# 2. End Turn Button
+	# 2a. End Turn Button (Top Right)
 	btn_end = Button.new()
 	btn_end.text = "End Turn"
 	btn_end.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	btn_end.position = Vector2(-120, 20)
 	btn_end.pressed.connect(func(): end_turn_pressed.emit())
 	root.add_child(btn_end)
+
+	# 2b. NEW: Toggle States Button (Top Right, left of End Turn)
+	btn_toggle_states = Button.new()
+	btn_toggle_states.text = "Show States"
+	btn_toggle_states.toggle_mode = true
+	btn_toggle_states.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	btn_toggle_states.position = Vector2(-240, 20) 
+	btn_toggle_states.pressed.connect(_on_toggle_states_pressed)
+	root.add_child(btn_toggle_states)
 
 	# 3. Action Bar
 	var hbox = HBoxContainer.new()
@@ -182,6 +192,12 @@ func _create_action_btn(text: String, mode: String, parent: Node) -> Button:
 func _on_action_btn_pressed(mode: String):
 	set_active_mode(mode)
 	action_mode_changed.emit(mode)
+
+# NEW: Toggle Logic
+func _on_toggle_states_pressed():
+	var is_active = btn_toggle_states.button_pressed
+	UnitUI.toggle_global_display(is_active)
+	btn_toggle_states.text = "Hide States" if is_active else "Show States"
 
 func set_active_mode(mode: String):
 	btn_basic.set_pressed_no_signal(mode == "BASIC")
