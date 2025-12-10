@@ -2,10 +2,10 @@ class_name UnitFactory
 extends RefCounted
 
 # Preloading scripts ensures Godot updates these paths if you move files in the editor!
-const SCRIPT_ZHAO_YUN = preload("res://Entities/Heroes/Zhao_Yun.gd")
-const SCRIPT_LIU_BEI = preload("res://Entities/Heroes/Liu_Bei.gd")
-const SCRIPT_SOLDIER = preload("res://Entities/Heroes/SoldierDummy.gd")
-const SCRIPT_ARCHER = preload("res://Entities/Heroes/ArcherDummy.gd")
+const SCRIPT_ZHAO_YUN = preload("res://Entities/Heroes/Shu/Zhao_Yun.gd")
+const SCRIPT_LIU_BEI = preload("res://Entities/Heroes/Shu/Liu_Bei.gd")
+const SCRIPT_SOLDIER = preload("res://Entities/Heroes/AI/SoldierDummy.gd")
+const SCRIPT_ARCHER = preload("res://Entities/Heroes/AI/ArcherDummy.gd")
 
 # Preloading textures is also safer
 const TEX_ZHAO_YUN = preload("res://Assets/Heroes/Zhao_Yun.png")
