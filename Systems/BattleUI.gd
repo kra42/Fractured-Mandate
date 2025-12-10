@@ -1,4 +1,4 @@
-class_name GameUI
+class_name BattleUI
 extends CanvasLayer
 
 signal action_mode_changed(mode: String) 
@@ -11,12 +11,13 @@ var bar_qi: ProgressBar
 var lbl_hp_text: Label
 var lbl_qi_text: Label
 
+var btn_passive: Button
 var btn_basic: Button
 var btn_adv: Button
 var btn_ult: Button
 var btn_details: Button 
 var btn_end: Button
-var btn_toggle_states: Button # NEW Toggle Button
+var btn_toggle_states: Button
 
 var log_box: TextEdit 
 var hbox_turn_queue: HBoxContainer
@@ -60,7 +61,6 @@ func _setup_ui():
 	bar_hp = ProgressBar.new()
 	bar_hp.custom_minimum_size = Vector2(0, 20)
 	bar_hp.show_percentage = false
-	# Style: Red
 	var style_hp = StyleBoxFlat.new()
 	style_hp.bg_color = Color(0.8, 0.2, 0.2)
 	bar_hp.add_theme_stylebox_override("fill", style_hp)
@@ -82,7 +82,6 @@ func _setup_ui():
 	bar_qi = ProgressBar.new()
 	bar_qi.custom_minimum_size = Vector2(0, 20)
 	bar_qi.show_percentage = false
-	# Style: Blue
 	var style_qi = StyleBoxFlat.new()
 	style_qi.bg_color = Color(0.2, 0.4, 0.8)
 	bar_qi.add_theme_stylebox_override("fill", style_qi)
@@ -101,7 +100,7 @@ func _setup_ui():
 	btn_details.disabled = true
 	vbox.add_child(btn_details)
 
-	# 2a. End Turn Button (Top Right)
+	# 2. Top Right Buttons
 	btn_end = Button.new()
 	btn_end.text = "End Turn"
 	btn_end.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -109,7 +108,6 @@ func _setup_ui():
 	btn_end.pressed.connect(func(): end_turn_pressed.emit())
 	root.add_child(btn_end)
 
-	# 2b. NEW: Toggle States Button (Top Right, left of End Turn)
 	btn_toggle_states = Button.new()
 	btn_toggle_states.text = "Show States"
 	btn_toggle_states.toggle_mode = true
@@ -126,18 +124,39 @@ func _setup_ui():
 	hbox.add_theme_constant_override("separation", 10)
 	root.add_child(hbox)
 	
+	# Passive Button (Tooltip only)
+	btn_passive = Button.new()
+	btn_passive.text = "Passive"
+	btn_passive.custom_minimum_size = Vector2(100, 50)
+	hbox.add_child(btn_passive)
+	
 	btn_basic = _create_action_btn("Basic Atk", "BASIC", hbox)
 	btn_adv = _create_action_btn("Skill (2 Qi)", "ADVANCED", hbox)
 	btn_ult = _create_action_btn("Ult (5 Qi)", "ULTIMATE", hbox)
 
-	# 4. Combat Log
+	# 4. Combat Log (Adjusted Positioning)
 	var panel_log = PanelContainer.new()
+	# Anchor to Bottom Left specifically
+	panel_log.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	# Grow UP and RIGHT from the bottom-left corner
+	panel_log.grow_horizontal = Control.GROW_DIRECTION_END
+	panel_log.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	
+	# Offset Y by negative height to sit ON TOP of bottom edge, or 0 if anchored correctly to inside
+	# With PRESET_BOTTOM_LEFT, (0,0) is the bottom-left corner.
+	# We set offset to (0,0) to hug the corner tightly.
+	panel_log.position = Vector2(0, 0) 
+	# However, since we are growing upwards (negative Y), we might need to manually set position 
+	# OR rely on anchors. The safest way for "tucked in corner" in code is:
+	panel_log.anchor_left = 0.0
 	panel_log.anchor_top = 1.0
+	panel_log.anchor_right = 0.0
 	panel_log.anchor_bottom = 1.0
-	panel_log.offset_top = -220
-	panel_log.offset_bottom = -20
-	panel_log.offset_left = 20
-	panel_log.offset_right = 400
+	panel_log.offset_left = 0
+	panel_log.offset_top = -180 # Height of the log box
+	panel_log.offset_right = 360 # Width of the log box
+	panel_log.offset_bottom = 0
+	
 	root.add_child(panel_log)
 	
 	log_box = TextEdit.new()
@@ -193,7 +212,6 @@ func _on_action_btn_pressed(mode: String):
 	set_active_mode(mode)
 	action_mode_changed.emit(mode)
 
-# NEW: Toggle Logic
 func _on_toggle_states_pressed():
 	var is_active = btn_toggle_states.button_pressed
 	UnitUI.toggle_global_display(is_active)
@@ -216,6 +234,12 @@ func update_stats(unit):
 		bar_qi.value = 0
 		lbl_qi_text.text = ""
 		btn_details.disabled = true
+		
+		# Clear Tooltips
+		btn_passive.tooltip_text = ""
+		btn_basic.tooltip_text = ""
+		btn_adv.tooltip_text = ""
+		btn_ult.tooltip_text = ""
 		return
 	
 	btn_details.disabled = false
@@ -230,6 +254,15 @@ func update_stats(unit):
 	bar_qi.max_value = unit.max_qi
 	bar_qi.value = unit.current_qi
 	lbl_qi_text.text = "%d / %d" % [unit.current_qi, unit.max_qi]
+	
+	_update_btn_tooltip(btn_basic, unit, "BASIC")
+	_update_btn_tooltip(btn_adv, unit, "ADVANCED")
+	_update_btn_tooltip(btn_ult, unit, "ULTIMATE")
+	_update_btn_tooltip(btn_passive, unit, "PASSIVE")
+
+func _update_btn_tooltip(btn: Button, unit: Unit, type: String):
+	var info = unit.get_skill_info(type)
+	btn.tooltip_text = "%s\n\n%s\n\nEffect: %s" % [info.name, info.desc, info.math]
 
 func _on_details_pressed():
 	if not _current_inspected_unit: return

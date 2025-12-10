@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cr2vk7b1vxirs"
-path="res://.godot/imported/OIG4.jpg-bee802676a501c03b3d563deab0174e5.ctex"
+uid="uid://cf0n2teprji4g"
+path="res://.godot/imported/Zhao_Yun.png-927b34fb7175ee3b13e0a50a5a5f2e8e.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://BackgroundImage/OIG4.jpg"
-dest_files=["res://.godot/imported/OIG4.jpg-bee802676a501c03b3d563deab0174e5.ctex"]
+source_file="res://Assets/Heroes/Zhao_Yun.png"
+dest_files=["res://.godot/imported/Zhao_Yun.png-927b34fb7175ee3b13e0a50a5a5f2e8e.ctex"]
 
 [params]
 

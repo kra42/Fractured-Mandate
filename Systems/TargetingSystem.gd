@@ -21,14 +21,15 @@ static func get_valid_attacks(unit: Unit, grid: Dictionary, cols: int) -> Array[
 	elif unit.unit_class == "STRATEGIST":
 		attacks.append_array(get_all_enemies_in_row(row, unit.player_id, grid, cols))
 		
-	# SUPPORT: Range 1 in any direction (Omni-Heal/Buff)
+	# SUPPORT: Flexible Range 1 (Can hit Enemies OR Buff Allies)
 	elif unit.unit_class == "SUPPORT":
 		var directions = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
 		for dir in directions:
 			var target_pos = unit.grid_pos + dir
 			if grid.has(target_pos):
 				var target_unit = grid[target_pos]
-				if is_instance_valid(target_unit) and target_unit.player_id == unit.player_id:
+				if is_instance_valid(target_unit):
+					# Supports can interact with ANYONE adjacent (Attack foe / Buff friend)
 					attacks.append(target_pos)
 					
 	return attacks
@@ -41,7 +42,6 @@ static func get_enemy_in_row(row: int, attacker_id: String, mode: String, grid: 
 		var cell = Vector2i(c, row)
 		if grid.has(cell):
 			var unit = grid[cell]
-			# SAFETY CHECK ADDED
 			if is_instance_valid(unit) and unit.player_id != attacker_id:
 				potential_targets.append(cell)
 	
@@ -56,7 +56,6 @@ static func get_all_enemies_in_row(row: int, attacker_id: String, grid: Dictiona
 		var cell = Vector2i(c, row)
 		if grid.has(cell):
 			var unit = grid[cell]
-			# SAFETY CHECK ADDED
 			if is_instance_valid(unit) and unit.player_id != attacker_id:
 				targets.append(cell)
 	return targets
@@ -76,6 +75,8 @@ static func is_shot_obstructed(attacker: Unit, target: Unit, grid: Dictionary) -
 				return true
 	return false
 
+# --- ADJACENCY HELPERS ---
+
 static func get_adjacent_enemies(center_pos: Vector2i, attacker_id: String, grid: Dictionary) -> Array[Unit]:
 	var enemies: Array[Unit] = []
 	var directions = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
@@ -89,30 +90,40 @@ static func get_adjacent_enemies(center_pos: Vector2i, attacker_id: String, grid
 				
 	return enemies
 
-# --- NEW: COVER CALCULATION ---
+# NEW: For Auras and Buffs (Liu Bei Passive)
+static func get_adjacent_allies(center_pos: Vector2i, my_team_id: String, grid: Dictionary) -> Array[Unit]:
+	var allies: Array[Unit] = []
+	var directions = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
+	
+	for d in directions:
+		var check_pos = center_pos + d
+		if grid.has(check_pos):
+			var unit = grid[check_pos]
+			# Check same team, exclude dead
+			if is_instance_valid(unit) and unit.player_id == my_team_id and unit.current_hp > 0:
+				allies.append(unit)
+				
+	return allies
+
+# --- COVER CALCULATION ---
 # Returns TRUE if there is another enemy closer to the attacker in the same row
 static func is_target_covered_in_row(attacker: Unit, target: Unit, grid: Dictionary) -> bool:
-	# 1. Must be in same row
 	if attacker.grid_pos.y != target.grid_pos.y:
 		return false
 	
-	# 2. Get all enemies in this row
 	var enemies_in_row: Array[Unit] = []
 	for pos in grid:
 		var unit = grid[pos]
-		# SAFETY CHECK ADDED
 		if is_instance_valid(unit) and unit.grid_pos.y == attacker.grid_pos.y and unit.player_id != attacker.player_id:
 			enemies_in_row.append(unit)
 	
 	if enemies_in_row.is_empty():
 		return false
 		
-	# 3. Sort by distance to attacker
 	enemies_in_row.sort_custom(func(a, b):
 		var dist_a = abs(a.grid_pos.x - attacker.grid_pos.x)
 		var dist_b = abs(b.grid_pos.x - attacker.grid_pos.x)
 		return dist_a < dist_b
 	)
 	
-	# 4. If the closest enemy is NOT the target, then the target is covered
 	return enemies_in_row[0] != target

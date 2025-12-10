@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://35iu5jfkkgm"
-path="res://.godot/imported/Archer_Dummy.png-e25c8cc6c4826d29495ce08c564046f7.ctex"
+uid="uid://cr2vk7b1vxirs"
+path="res://.godot/imported/OIG4.jpg-9da6e4545ce268e22aaf0e0510fb9dc7.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Images_Heroes/Archer_Dummy.png"
-dest_files=["res://.godot/imported/Archer_Dummy.png-e25c8cc6c4826d29495ce08c564046f7.ctex"]
+source_file="res://Assets/BackgroundImage/OIG4.jpg"
+dest_files=["res://.godot/imported/OIG4.jpg-9da6e4545ce268e22aaf0e0510fb9dc7.ctex"]
 
 [params]
 

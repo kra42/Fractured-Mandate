@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cf0n2teprji4g"
-path="res://.godot/imported/Zhao_Yun.png-e8952a1bfd3b48d6f557ae2b233d44a2.ctex"
+uid="uid://35iu5jfkkgm"
+path="res://.godot/imported/Archer_Dummy.png-b3c071bd04de4516931a55c407a7c060.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://Images_Heroes/Zhao_Yun.png"
-dest_files=["res://.godot/imported/Zhao_Yun.png-e8952a1bfd3b48d6f557ae2b233d44a2.ctex"]
+source_file="res://Assets/Heroes/Archer_Dummy.png"
+dest_files=["res://.godot/imported/Archer_Dummy.png-b3c071bd04de4516931a55c407a7c060.ctex"]
 
 [params]
 

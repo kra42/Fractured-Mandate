@@ -16,7 +16,7 @@ var highlighted_moves: Array[Vector2i] = []
 var highlighted_attacks: Array[Vector2i] = []
 
 # --- SUB-MANAGERS ---
-var game_ui: GameUI
+var battle_ui: BattleUI # RENAMED from GameUI
 var ai_manager: AIManager
 var turn_manager: TurnManager
 var grid_manager: GridManager
@@ -33,10 +33,11 @@ func _ready():
 	board_renderer.setup(COLS, ROWS, ZONE_COLS, ZONE_ROWS)
 	add_child(board_renderer) 
 	
-	game_ui = GameUI.new()
-	add_child(game_ui)
-	game_ui.action_mode_changed.connect(_on_ui_action_mode_changed)
-	game_ui.end_turn_pressed.connect(func(): turn_manager.end_current_turn())
+	# UPDATED: Use BattleUI
+	battle_ui = BattleUI.new()
+	add_child(battle_ui)
+	battle_ui.action_mode_changed.connect(_on_ui_action_mode_changed)
+	battle_ui.end_turn_pressed.connect(func(): turn_manager.end_current_turn())
 	
 	ai_manager = AIManager.new()
 	add_child(ai_manager)
@@ -49,7 +50,6 @@ func _ready():
 	turn_manager.turn_changed.connect(_on_active_unit_changed)
 	turn_manager.ai_turn_requested.connect(_on_ai_turn_requested)
 	
-	# CHANGED: Connect to a real function to handle logic, not just logging
 	turn_manager.round_started.connect(_on_round_started)
 	
 	call_deferred("_setup_battle")
@@ -92,12 +92,36 @@ func _on_unit_died(unit: Unit):
 	if grid_manager:
 		grid_manager.remove_unit(unit)
 	_refresh_visuals()
+	
+	# Win/Loss Check
+	_check_game_over_condition()
+
+func _check_game_over_condition():
+	var all_units = grid_manager.get_all_units()
+	var player_alive = false
+	var enemy_alive = false
+	
+	for u in all_units:
+		if is_instance_valid(u) and u.current_hp > 0:
+			if u.player_id == TurnManager.TEAM_PLAYER:
+				player_alive = true
+			elif u.player_id == TurnManager.TEAM_ENEMY:
+				enemy_alive = true
+	
+	if not player_alive:
+		battle_ui.log_message("--- DEFEAT: All heroes have fallen! ---")
+		# Optional: Disable input or show game over screen here
+		set_process_unhandled_input(false)
+		
+	elif not enemy_alive:
+		battle_ui.log_message("--- VICTORY: All enemies defeated! ---")
+		# Optional: Show victory screen here
+		set_process_unhandled_input(false)
 
 # --- TURN LOGIC ---
 
-# NEW: Reset unit states when a new round begins
 func _on_round_started(round_num: int):
-	game_ui.log_message("--- ROUND %d START ---" % round_num)
+	battle_ui.log_message("--- ROUND %d START ---" % round_num)
 	
 	for unit in grid_manager.get_all_units():
 		if is_instance_valid(unit):
@@ -105,7 +129,7 @@ func _on_round_started(round_num: int):
 			unit.modulate = Color.WHITE
 
 func _on_active_unit_changed(active_unit: Unit):
-	game_ui.update_turn_queue(turn_manager.turn_queue, active_unit)
+	battle_ui.update_turn_queue(turn_manager.turn_queue, active_unit)
 	selected_unit = null
 	highlighted_moves = []
 	highlighted_attacks = []
@@ -115,9 +139,9 @@ func _on_active_unit_changed(active_unit: Unit):
 	
 	if is_instance_valid(active_unit) and active_unit.player_id == TurnManager.TEAM_PLAYER:
 		_select_unit(active_unit)
-		game_ui.log_message("It is %s's turn." % active_unit.name)
+		battle_ui.log_message("It is %s's turn." % active_unit.name)
 	else:
-		game_ui.update_stats(null) 
+		battle_ui.update_stats(null) 
 	
 	_refresh_visuals()
 
@@ -169,8 +193,8 @@ func _select_unit(unit: Unit):
 	selected_unit = unit
 	if active_skill_mode == "": active_skill_mode = "BASIC"
 	
-	game_ui.update_stats(unit)
-	game_ui.set_active_mode(active_skill_mode)
+	battle_ui.update_stats(unit)
+	battle_ui.set_active_mode(active_skill_mode)
 	
 	highlighted_moves = get_valid_formation_moves(unit)
 	_refresh_highlights()
@@ -221,7 +245,7 @@ func finalize_action(unit: Unit):
 	selected_unit = null
 	highlighted_moves = []
 	highlighted_attacks = []
-	game_ui.update_stats(null)
+	battle_ui.update_stats(null)
 	_refresh_visuals()
 	
 	turn_manager.end_current_turn()
@@ -235,7 +259,7 @@ func _on_ui_action_mode_changed(mode: String):
 		_refresh_visuals()
 
 func _on_unit_log_event(msg: String):
-	if game_ui: game_ui.log_message(msg)
+	if battle_ui: battle_ui.log_message(msg)
 	print(msg) 
 
 func _refresh_highlights():

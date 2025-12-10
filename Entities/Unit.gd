@@ -64,7 +64,27 @@ func try_use_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
 		return true
 	return false
 
-# --- VIRTUAL METHODS (Override these in subclasses) ---
+# --- TOOLTIP INFO (NEW) ---
+# Returns a dictionary with keys: name, desc, math
+func get_skill_info(type: String) -> Dictionary:
+	var info = { "name": "Unknown", "desc": "No description.", "math": "N/A" }
+	
+	if type == "BASIC":
+		info.name = "Basic Attack"
+		info.desc = "Standard attack against a single target."
+		info.math = "%d Phys Dmg (100%% ATK)" % attack_power
+	elif type == "ADVANCED":
+		info.name = "Advanced Skill"
+		info.desc = "A specialized move requiring Qi."
+		info.math = "Cost: %d Qi" % COST_ADVANCED
+	elif type == "ULTIMATE":
+		info.name = "Ultimate"
+		info.desc = "A powerful signature move."
+		info.math = "Cost: %d Qi" % COST_ULTIMATE
+		
+	return info
+
+# --- VIRTUAL METHODS ---
 
 func _perform_basic_attack(target: Unit) -> void:
 	log_event.emit(name + " attacks " + target.name)

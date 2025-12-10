@@ -29,7 +29,9 @@ static func toggle_global_display(enabled: bool):
 	_force_show_all = enabled
 
 func _ready():
-	_qi_texture = load("res://Image_Icons/qi.png")
+	# UPDATED PATH: Assuming you moved Image_Icons to Assets/Icons
+	# If you haven't moved it yet, keep it as "res://Image_Icons/qi.png"
+	_qi_texture = preload("res://Assets/Icons/qi.png")
 	set_as_top_level(true)
 	
 	# Start completely invisible
