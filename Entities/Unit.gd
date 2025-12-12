@@ -42,6 +42,10 @@ func _update_visuals():
 
 # --- PUBLIC API ---
 
+func get_skill_target_type(skill_mode: String) -> String:
+	# Default behavior for all units unless overridden
+	return TargetingSystem.TARGET_FRONT_ENEMY
+
 func try_use_basic_attack(target: Unit) -> bool:
 	_perform_basic_attack(target)
 	return true

@@ -20,7 +20,19 @@ func _ready():
 	resist = { "phys": 10, "fire": 0, "poison": 0 }
 	
 	super()
-
+	
+# --- TARGETING CONFIGURATION ---
+func get_skill_target_type(skill_mode: String) -> String:
+	match skill_mode:
+		"BASIC":
+			return TargetingSystem.TARGET_FRONT_ENEMY
+		"ADVANCED":
+			return TargetingSystem.TARGET_RANGED_ENEMY
+		"ULTIMATE":
+			return TargetingSystem.TARGET_SELF_ADJACENT_ALLIES
+	
+	# Fallback
+	return TargetingSystem.TARGET_SELF
 # --- TOOLTIPS ---
 func get_skill_info(type: String) -> Dictionary:
 	var info = super.get_skill_info(type)

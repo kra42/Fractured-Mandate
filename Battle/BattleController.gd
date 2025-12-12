@@ -78,6 +78,8 @@ func _setup_deployment_phase():
 	_spawn_unit_on_grid(9, 2, TurnManager.TEAM_ENEMY, "SOLDIER_DUMMY", 2)
 	_spawn_unit_on_grid(10, 1, TurnManager.TEAM_ENEMY, "ARCHER_DUMMY", 1)
 	
+	max_deployment_slots = player_roster_data.size()
+	
 	# 2. Populate Player Bench (UI)
 	battle_ui.setup_deployment_bench(player_roster_data)
 	
@@ -88,8 +90,8 @@ func _setup_deployment_phase():
 
 # Called when player clicks "Start Battle"
 func _on_start_battle_pressed():
-	if deployed_units.size() == 0:
-		battle_ui.log_message("You must deploy at least one hero!")
+	if deployed_units.size() < max_deployment_slots:
+		battle_ui.log_message("You must deploy all available heroes (%d/%d)!" % [deployed_units.size(), max_deployment_slots])
 		return
 		
 	current_state = BattleState.BATTLE_START
@@ -105,7 +107,6 @@ func _on_start_battle_pressed():
 
 func _on_deployment_hero_selected(hero_id: String):
 	selected_hero_id_for_deployment = hero_id
-	# battle_ui.log_message("Selected to deploy: " + hero_id)
 
 # --- DEPLOYMENT LOGIC ---
 
@@ -270,6 +271,9 @@ func _is_valid_cell(cell: Vector2i) -> bool:
 	return cell.x >= 0 and cell.x < COLS and cell.y >= 0 and cell.y < ROWS
 
 func handle_click(cell: Vector2i):
+	# Always hide swap prompt on new clicks to avoid stale state
+	battle_ui.hide_swap_prompt()
+	
 	var active_unit = turn_manager.get_current_unit()
 	if not is_instance_valid(active_unit) or active_unit.player_id != TurnManager.TEAM_PLAYER: return
 
@@ -290,7 +294,11 @@ func handle_click(cell: Vector2i):
 				perform_support(active_unit, clicked_unit)
 				return
 			if cell in highlighted_moves:
-				perform_formation_move(active_unit, cell)
+				# Show prompt for swapping
+				var screen_pos = clicked_unit.get_global_transform_with_canvas().origin
+				battle_ui.show_swap_prompt(screen_pos, func():
+					perform_formation_move(active_unit, cell)
+				)
 				return
 
 	elif not clicked_unit:
@@ -321,7 +329,18 @@ func perform_support(healer: Unit, target: Unit):
 
 func perform_formation_move(unit: Unit, target_cell: Vector2i):
 	if unit.current_qi <= 0: return
+	
+	# FIX: Deduct Qi AND Update Visuals IMMEDIATELY
 	unit.current_qi -= 1
+	
+	# Update Floating Bar
+	if unit.ui:
+		unit.ui.update_status(unit.current_hp, unit.max_hp, unit.current_qi, unit.max_qi)
+	
+	# FIX: Update Main UI Bar (BattleUI) if this unit is currently selected
+	if selected_unit == unit:
+		battle_ui.update_stats(unit)
+		
 	var other_unit = grid_manager.get_unit_at(target_cell)
 	if other_unit:
 		grid_manager.swap_units(unit, other_unit)
@@ -361,13 +380,12 @@ func _on_unit_log_event(msg: String):
 
 func _refresh_highlights():
 	if not selected_unit: return
-	highlighted_attacks = TargetingSystem.get_valid_attacks(selected_unit, grid_manager.grid, COLS)
+	var target_type = selected_unit.get_skill_target_type(active_skill_mode)
+	highlighted_attacks = TargetingSystem.get_valid_targets(selected_unit, target_type, grid_manager.grid, COLS)
 
 func _refresh_visuals():
-	# In deployment, highlight the spawn zone
 	if current_state == BattleState.DEPLOYMENT:
 		board_renderer.set_highlights(Vector2i(-1,-1), [], [])
-		# We could add a special 'deployment zone' highlight here if BoardRenderer supported it
 		return
 
 	var s_pos = selected_unit.grid_pos if selected_unit else Vector2i(-1, -1)

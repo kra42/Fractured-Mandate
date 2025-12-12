@@ -20,19 +20,19 @@ func start_game(all_units: Array):
 	round_count = 0
 	_start_new_round(all_units)
 
-# Resets the timeline based on Initiative
 func _start_new_round(all_units: Array):
 	round_count += 1
-	
-	# 1. Filter out dead units and create a fresh list
+	# 1. Filter out dead units
 	turn_queue = all_units.filter(func(u): return u != null and u.current_hp > 0)
-	
-	# 2. Sort by Initiative (Descending: Highest Init goes first)
+	# --- FIX START ---
+	if turn_queue.is_empty():
+		print("TurnManager: No units left to act in this round.")
+		return # Stop execution to prevent infinite recursion
+	# --- FIX END ---
+	# 2. Sort by Initiative
 	turn_queue.sort_custom(func(a, b): return a.initiative > b.initiative)
-	
 	current_index = -1
 	round_started.emit(round_count)
-	
 	# 3. Start first turn
 	_advance_turn()
 

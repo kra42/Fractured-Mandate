@@ -4,7 +4,7 @@ extends CanvasLayer
 signal action_mode_changed(mode: String) 
 signal end_turn_pressed
 signal start_battle_pressed
-signal deployment_hero_selected(hero_id: String) # NEW Signal for clicking bench
+signal deployment_hero_selected(hero_id: String) 
 
 # --- UI ELEMENTS ---
 var lbl_name: Label
@@ -13,13 +13,16 @@ var bar_qi: ProgressBar
 var lbl_hp_text: Label
 var lbl_qi_text: Label
 
-var btn_passive: Button
+# CHANGED: Passive is now a panel, not a button
+var passive_indicator: PanelContainer
 var btn_basic: Button
 var btn_adv: Button
 var btn_ult: Button
 var btn_details: Button 
 var btn_end: Button
 var btn_toggle_states: Button
+
+var btn_swap_confirm: Button
 
 var log_box: TextEdit
 var panel_log: PanelContainer 
@@ -35,7 +38,6 @@ var hbox_bench: HBoxContainer
 var btn_start_battle: Button
 var battle_ui_container: Control 
 
-# Track currently selected hero for visual feedback
 var selected_bench_hero_id: String = ""
 
 func _ready():
@@ -143,11 +145,25 @@ func _setup_ui():
 	hbox_actions.add_theme_constant_override("separation", 10)
 	battle_ui_container.add_child(hbox_actions)
 	
-	btn_passive = Button.new()
-	btn_passive.text = "Passive"
-	btn_passive.custom_minimum_size = Vector2(100, 50)
-	hbox_actions.add_child(btn_passive)
+	# --- PASSIVE INDICATOR (Now a Panel, not a Button) ---
+	passive_indicator = PanelContainer.new()
+	passive_indicator.custom_minimum_size = Vector2(100, 50)
 	
+	var style_passive = StyleBoxFlat.new()
+	style_passive.bg_color = Color(0.15, 0.15, 0.15, 0.9)
+	style_passive.border_width_bottom = 2
+	style_passive.border_color = Color(1, 0.8, 0.2) # Gold accent
+	passive_indicator.add_theme_stylebox_override("panel", style_passive)
+	
+	var lbl_passive = Label.new()
+	lbl_passive.text = "Passive"
+	lbl_passive.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl_passive.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	passive_indicator.add_child(lbl_passive)
+	
+	hbox_actions.add_child(passive_indicator)
+	
+	# ACTIVE SKILL BUTTONS
 	btn_basic = _create_action_btn("Basic Atk", "BASIC", hbox_actions)
 	btn_adv = _create_action_btn("Skill (2 Qi)", "ADVANCED", hbox_actions)
 	btn_ult = _create_action_btn("Ult (5 Qi)", "ULTIMATE", hbox_actions)
@@ -165,6 +181,14 @@ func _setup_ui():
 	hbox_turn_queue.position.y = 20
 	hbox_turn_queue.add_theme_constant_override("separation", 10)
 	battle_ui_container.add_child(hbox_turn_queue)
+	
+	# Swap Button
+	btn_swap_confirm = Button.new()
+	btn_swap_confirm.text = "Swap Units"
+	btn_swap_confirm.custom_minimum_size = Vector2(100, 40)
+	btn_swap_confirm.visible = false
+	btn_swap_confirm.z_index = 100 
+	battle_ui_container.add_child(btn_swap_confirm) 
 
 	# --- DEPLOYMENT UI ---
 	deployment_panel = PanelContainer.new()
@@ -237,6 +261,23 @@ func _setup_ui():
 	lbl_details_content.bbcode_enabled = true
 	margin.add_child(lbl_details_content)
 
+# --- SWAP PROMPT ---
+
+func show_swap_prompt(screen_pos: Vector2, callback: Callable):
+	btn_swap_confirm.position = screen_pos - Vector2(btn_swap_confirm.size.x / 2, 80)
+	btn_swap_confirm.visible = true
+	
+	for c in btn_swap_confirm.pressed.get_connections():
+		btn_swap_confirm.pressed.disconnect(c.callable)
+	
+	btn_swap_confirm.pressed.connect(func(): 
+		hide_swap_prompt()
+		callback.call()
+	)
+
+func hide_swap_prompt():
+	btn_swap_confirm.visible = false
+
 # --- DEPLOYMENT FUNCTIONS ---
 
 func setup_deployment_bench(roster_data: Array):
@@ -255,22 +296,18 @@ func setup_deployment_bench(roster_data: Array):
 	_update_start_button(0, roster_data.size())
 
 func _create_bench_slot(hero_id: String) -> Control:
-	# Use a Button or Control that can handle input
 	var btn = Button.new()
 	btn.custom_minimum_size = Vector2(100, 120)
-	btn.toggle_mode = true # Allows "Selected" state visual
+	btn.toggle_mode = true 
 	
-	# Connect click
 	btn.pressed.connect(func(): _on_bench_slot_pressed(btn, hero_id))
 	
 	var vbox = VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	# Make sure vbox doesn't block mouse
 	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE 
 	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
 	btn.add_child(vbox)
 	
-	# Sprite Display
 	var tex_rect = TextureRect.new()
 	tex_rect.custom_minimum_size = Vector2(64, 64)
 	tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -284,7 +321,6 @@ func _create_bench_slot(hero_id: String) -> Control:
 	
 	vbox.add_child(tex_rect)
 	
-	# Name Label
 	var lbl = Label.new()
 	lbl.text = _format_hero_name(hero_id)
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -296,12 +332,10 @@ func _create_bench_slot(hero_id: String) -> Control:
 	return btn
 
 func _on_bench_slot_pressed(pressed_btn: Button, hero_id: String):
-	# Deselect others
 	for child in hbox_bench.get_children():
 		if child is Button and child != pressed_btn:
 			child.set_pressed_no_signal(false)
 	
-	# Toggle logic
 	if pressed_btn.button_pressed:
 		selected_bench_hero_id = hero_id
 		deployment_hero_selected.emit(hero_id)
@@ -318,7 +352,7 @@ func update_deployment_status(current_count: int, max_count: int):
 	_update_start_button(current_count, max_count)
 
 func _update_start_button(current: int, max_allowed: int):
-	btn_start_battle.disabled = (current == 0)
+	btn_start_battle.disabled = (current < max_allowed)
 
 func hide_deployment_ui():
 	deployment_panel.visible = false
@@ -363,7 +397,7 @@ func update_stats(unit):
 		lbl_qi_text.text = ""
 		btn_details.disabled = true
 		
-		btn_passive.tooltip_text = ""
+		passive_indicator.tooltip_text = ""
 		btn_basic.tooltip_text = ""
 		btn_adv.tooltip_text = ""
 		btn_ult.tooltip_text = ""
@@ -381,14 +415,20 @@ func update_stats(unit):
 	bar_qi.value = unit.current_qi
 	lbl_qi_text.text = "%d / %d" % [unit.current_qi, unit.max_qi]
 	
-	_update_btn_tooltip(btn_basic, unit, "BASIC")
-	_update_btn_tooltip(btn_adv, unit, "ADVANCED")
-	_update_btn_tooltip(btn_ult, unit, "ULTIMATE")
-	_update_btn_tooltip(btn_passive, unit, "PASSIVE")
+	# NEW: Disable skills if not enough Qi
+	# Hardcoded thresholds based on Unit.gd constants (ADV=2, ULT=5)
+	btn_adv.disabled = (unit.current_qi < 2)
+	btn_ult.disabled = (unit.current_qi < 5)
+	
+	_update_tooltip(btn_basic, unit, "BASIC")
+	_update_tooltip(btn_adv, unit, "ADVANCED")
+	_update_tooltip(btn_ult, unit, "ULTIMATE")
+	_update_tooltip(passive_indicator, unit, "PASSIVE")
 
-func _update_btn_tooltip(btn: Button, unit: Unit, type: String):
+# Updated to accept Control so it works for Buttons AND Panels
+func _update_tooltip(control: Control, unit: Unit, type: String):
 	var info = unit.get_skill_info(type)
-	btn.tooltip_text = "%s\n\n%s\n\nEffect: %s" % [info.name, info.desc, info.math]
+	control.tooltip_text = "%s\n\n%s\n\nEffect: %s" % [info.name, info.desc, info.math]
 
 func _on_details_pressed():
 	if not _current_inspected_unit: return

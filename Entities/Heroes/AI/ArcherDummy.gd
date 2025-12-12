@@ -11,6 +11,10 @@ func _ready():
 	resist = { "phys": 0, "fire": 0, "poison": 0 }
 	super()
 
+# FIX: Override targeting type so UI/System knows this unit targets the whole row
+func get_skill_target_type(skill_mode: String) -> String:
+	return TargetingSystem.TARGET_RANGED_ENEMY
+
 func use_basic_attack(target: Unit) -> void:
 	if not target:
 		log_event.emit("Archer error: Target is null!")
@@ -20,9 +24,14 @@ func use_basic_attack(target: Unit) -> void:
 	var damage_to_deal = attack_power
 	var is_covered = false
 	
-	# 1. Check for Cover using generic system
-	if board and "grid" in board:
-		is_covered = TargetingSystem.is_target_covered_in_row(self, target, board.grid)
+	# FIX: Retrieve grid correctly (BattleController has 'grid_manager', not 'grid')
+	var current_grid = {}
+	if board and "grid_manager" in board:
+		current_grid = board.grid_manager.grid
+	
+	# FIX: Use local helper for cover check since TargetingSystem method is missing
+	if not current_grid.is_empty():
+		is_covered = _is_target_covered(self, target, current_grid)
 
 	# 2. Apply Penalty if Covered
 	if is_covered:
@@ -59,3 +68,20 @@ func ai_take_turn(grid: Dictionary, cols: int) -> void:
 	else:
 		# STRICT RULE: If no one is in the row, do nothing.
 		log_event.emit("Archer sees no targets in row and waits.")
+
+# --- HELPER ---
+# Local implementation of cover logic
+func _is_target_covered(attacker: Unit, target: Unit, grid: Dictionary) -> bool:
+	var start_x = attacker.grid_pos.x
+	var end_x = target.grid_pos.x
+	var row = attacker.grid_pos.y
+	
+	var min_x = min(start_x, end_x)
+	var max_x = max(start_x, end_x)
+	
+	# Check every cell strictly between attacker and target
+	for x in range(min_x + 1, max_x):
+		if grid.has(Vector2i(x, row)):
+			return true
+			
+	return false

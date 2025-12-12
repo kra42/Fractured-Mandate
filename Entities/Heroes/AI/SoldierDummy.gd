@@ -18,18 +18,23 @@ func _ready():
 	resist = { "phys": 0, "fire": 0, "poison": 0 }
 	super()
 
+# FIX: Explicitly define targeting for UI/Logic consistency
+func get_skill_target_type(skill_mode: String) -> String:
+	return TargetingSystem.TARGET_FRONT_ENEMY
+
 # --- SKILLS ---
 
 func use_basic_attack(target: Unit) -> void:
-	print("Soldier Dummy pokes ", target.name, " with spear.")
+	# FIX: Use log_event instead of print for game feedback
+	log_event.emit("Soldier Dummy thrusts spear at %s." % target.name)
 	target.take_damage(attack_power)
 
 func use_advanced_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
-	print("Soldier Dummy tries to concentrate but fails.")
+	log_event.emit("Soldier Dummy tries to concentrate but fails.")
 	return false
 
 func use_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
-	print("Soldier Dummy looks confused.")
+	log_event.emit("Soldier Dummy looks confused.")
 	return false
 
 # --- AI LOGIC ---
@@ -42,4 +47,5 @@ func ai_take_turn(grid: Dictionary, cols: int) -> void:
 		var target = grid[target_pos]
 		use_basic_attack(target)
 	else:
-		print("Soldier Dummy sees no target and waits.")
+		# FIX: Use log_event
+		log_event.emit("Soldier Dummy sees no target and waits.")

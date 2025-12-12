@@ -17,9 +17,9 @@ func get_skill_target_type(skill_mode: String) -> String:
 	if skill_mode == "BASIC":
 		return TargetingSystem.TARGET_FRONT_ENEMY
 	elif skill_mode == "ADVANCED":
-		return TargetingSystem.TARGET_FRONT_ENEMY # Melee flurry
+		return TargetingSystem.TARGET_FRONT_ENEMY 
 	elif skill_mode == "ULTIMATE":
-		return TargetingSystem.TARGET_FRONT_ENEMY # Execution strike
+		return TargetingSystem.TARGET_FRONT_ENEMY 
 	return TargetingSystem.TARGET_SELF
 
 # --- TOOLTIPS ---
@@ -77,29 +77,56 @@ func _perform_advanced_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
 		else:
 			break
 	return true
-
 func _perform_ultimate_skill(target: Unit, grid: Dictionary, cols: int) -> bool:
 	log_event.emit("Zhao Yun uses Sevenfold Breach (Ultimate)!")
 	
 	var dmg = ceil(attack_power * 0.8) # 80% Damage
 	var hits_remaining = 7
 	var current_target = target
-	if current_target == null: return false
+	
+	if not is_instance_valid(current_target):
+		return false
 	
 	while hits_remaining > 0:
+		# 1. Deal Damage
+		# Check instance validity (in case they were freed in a previous iteration)
+		if not is_instance_valid(current_target):
+			break
+
 		current_target.take_damage(dmg) 
 		activate_passive("on_attack")
 		hits_remaining -= 1
 		
-		if hits_remaining <= 0: break
+		# If we finished all hits, stop immediately
+		if hits_remaining <= 0:
+			break
 		
-		# If target died, find new one (Chain logic)
-		if current_target.current_hp <= 0:
-			# For chaining, we might need adjacent enemies logic, 
-			# but TargetingSystem update handles initial target.
-			# Re-using TargetingSystem helper for chaining:
-			var neighbors = TargetingSystem.get_adjacent_enemies(current_target.grid_pos, player_id, grid)
-			if neighbors.is_empty(): break
-			current_target = neighbors.pick_random()
+		# 2. Bounce Logic
+		# We look for the TARGET'S allies (which are our enemies) to bounce to.
+		# Note: We pass current_target.player_id to find units on THEIR team.
+		var bounce_candidates = TargetingSystem.get_adjacent_allies(
+			current_target.grid_pos, 
+			current_target.player_id, 
+			grid
+		)
+		
+		if bounce_candidates.size() > 0:
+			# If neighbors exist, bounce to a random one for the next hit
+			var next_pos = bounce_candidates.pick_random()
+			var next_unit = grid[next_pos]
+			
+			# Log the bounce if the target changed
+			if next_unit != current_target:
+				log_event.emit("Sevenfold Breach bounces to %s!" % next_unit.name)
+				current_target = next_unit
+		else:
+			# No neighbors to bounce to
+			if current_target.current_hp <= 0:
+				# Target is dead AND no neighbors -> Chain breaks
+				log_event.emit("Target eliminated. No adjacent enemies to chain to.")
+				break
+			else:
+				# Target is alive but isolated -> Continue hitting the same target
+				pass 
 		
 	return true
