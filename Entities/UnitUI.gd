@@ -13,6 +13,7 @@ const FADE_SPEED = 10.0
 
 # --- COMPONENTS ---
 var _bar: ProgressBar
+var _lbl_hp: Label # Text for stats
 var _qi_container: HBoxContainer
 var _qi_texture: Texture2D
 
@@ -29,8 +30,7 @@ static func toggle_global_display(enabled: bool):
 	_force_show_all = enabled
 
 func _ready():
-	# UPDATED PATH: Assuming you moved Image_Icons to Assets/Icons
-	# If you haven't moved it yet, keep it as "res://Image_Icons/qi.png"
+	# UPDATED PATH: Pointing to Assets/Icons/qi.png
 	_qi_texture = preload("res://Assets/Icons/qi.png")
 	set_as_top_level(true)
 	
@@ -51,6 +51,10 @@ func update_status(hp: int, max_hp: int, qi: int, max_qi: int):
 	if _bar:
 		_bar.max_value = max_hp
 		_bar.value = hp
+		
+		# Update Label Text
+		if _lbl_hp:
+			_lbl_hp.text = "%d/%d" % [hp, max_hp]
 		
 		# Dynamic Color Logic
 		var pct = float(hp) / float(max_hp) if max_hp > 0 else 0
@@ -105,6 +109,10 @@ func _handle_visibility(delta: float):
 	
 	# Smooth Fade
 	modulate.a = lerp(modulate.a, target_alpha, FADE_SPEED * delta)
+	
+	# Toggle text visibility based solely on Force Show (Cleanliness)
+	if _lbl_hp:
+		_lbl_hp.visible = _force_show_all
 
 func _handle_z_index():
 	if "grid_pos" in _target_unit:
@@ -135,6 +143,17 @@ func _build_visuals():
 	style_fill.bg_color = Color(0.2, 0.8, 0.4)
 	_bar.add_theme_stylebox_override("fill", style_fill)
 	add_child(_bar)
+	
+	# HP Label (Only visible when Force Show is ON)
+	_lbl_hp = Label.new()
+	_lbl_hp.text = ""
+	_lbl_hp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_hp.add_theme_font_size_override("font_size", 14)
+	_lbl_hp.add_theme_color_override("font_outline_color", Color.BLACK)
+	_lbl_hp.add_theme_constant_override("outline_size", 4)
+	_lbl_hp.position = Vector2(-20, -BAR_HEIGHT / 2.0 - 20) # Above unit
+	_lbl_hp.visible = false
+	add_child(_lbl_hp)
 
 	# Qi Container (Bottom)
 	_qi_container = HBoxContainer.new()

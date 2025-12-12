@@ -1,14 +1,17 @@
 class_name UnitFactory
 extends RefCounted
 
-# Preloading scripts ensures Godot updates these paths if you move files in the editor!
+# UPDATED PATHS: Manually fixed to match your new folder structure.
+
+# Scripts are now in subfolders:
 const SCRIPT_ZHAO_YUN = preload("res://Entities/Heroes/Shu/Zhao_Yun.gd")
 const SCRIPT_LIU_BEI = preload("res://Entities/Heroes/Shu/Liu_Bei.gd")
 const SCRIPT_SOLDIER = preload("res://Entities/Heroes/AI/SoldierDummy.gd")
 const SCRIPT_ARCHER = preload("res://Entities/Heroes/AI/ArcherDummy.gd")
 
-# Preloading textures is also safer
+# Textures are directly in Assets/Heroes:
 const TEX_ZHAO_YUN = preload("res://Assets/Heroes/Zhao_Yun.png")
+const TEX_LIU_BEI = preload("res://Assets/Heroes/Liu_Bei_2.png")
 const TEX_SOLDIER = preload("res://Assets/Heroes/Soldier_Dummy.png")
 const TEX_ARCHER = preload("res://Assets/Heroes/Archer_Dummy.png")
 
@@ -22,7 +25,7 @@ const HERO_DB = {
 	"LIU_BEI": {
 		"script": SCRIPT_LIU_BEI, 
 		"base_stats": {},
-		"texture": TEX_ZHAO_YUN, # Placeholder
+		"texture": TEX_LIU_BEI, 
 		"display_name": "Liu Bei"
 	},
 	"SOLDIER_DUMMY": {
@@ -51,12 +54,26 @@ static func create_unit(hero_id: String, player_id: String, grid_pos: Vector2i, 
 	if data.has("script") and data["script"] != null:
 		unit_instance.set_script(data["script"])
 	
-	# ... rest of the logic remains the same ...
+	# Identity
+	unit_instance.grid_pos = grid_pos
+	unit_instance.player_id = player_id
+	unit_instance.z_index = grid_pos.y 
+	unit_instance.set_meta("hero_id", hero_id)
+	
+	var disp_name = data.get("display_name", hero_id)
+	unit_instance.name = disp_name # Set Node Name for logs
 	
 	# Texture
 	var sprite_node = unit_instance.get_node("Sprite2D")
 	if data.has("texture") and data["texture"] != null:
 		sprite_node.texture = data["texture"]
 		
-	# ...
+	# Stats
+	if data.has("base_stats") and not data["base_stats"].is_empty():
+		var stats = data["base_stats"]
+		if stats.has("hp"): unit_instance.max_hp = stats["hp"]
+		if stats.has("hp"): unit_instance.current_hp = stats["hp"]
+		if stats.has("atk"): unit_instance.attack_power = stats["atk"]
+		if stats.has("class"): unit_instance.unit_class = stats["class"]
+		
 	return unit_instance

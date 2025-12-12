@@ -3,6 +3,8 @@ extends CanvasLayer
 
 signal action_mode_changed(mode: String) 
 signal end_turn_pressed
+signal start_battle_pressed
+signal deployment_hero_selected(hero_id: String) # NEW Signal for clicking bench
 
 # --- UI ELEMENTS ---
 var lbl_name: Label
@@ -19,12 +21,22 @@ var btn_details: Button
 var btn_end: Button
 var btn_toggle_states: Button
 
-var log_box: TextEdit 
+var log_box: TextEdit
+var panel_log: PanelContainer 
 var hbox_turn_queue: HBoxContainer
 
 # Popup for Details
 var popup_details: Window
 var lbl_details_content: RichTextLabel
+
+# --- DEPLOYMENT UI ELEMENTS ---
+var deployment_panel: PanelContainer
+var hbox_bench: HBoxContainer
+var btn_start_battle: Button
+var battle_ui_container: Control 
+
+# Track currently selected hero for visual feedback
+var selected_bench_hero_id: String = ""
 
 func _ready():
 	_setup_ui()
@@ -36,11 +48,18 @@ func _setup_ui():
 	root.mouse_filter = Control.MOUSE_FILTER_PASS
 	add_child(root)
 
-	# 1. ENHANCED STATS PANEL (Top Left)
+	# --- BATTLE UI CONTAINER ---
+	battle_ui_container = Control.new()
+	battle_ui_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	battle_ui_container.mouse_filter = Control.MOUSE_FILTER_PASS
+	battle_ui_container.visible = false 
+	root.add_child(battle_ui_container)
+
+	# 1. ENHANCED STATS PANEL 
 	var panel_stats = PanelContainer.new()
 	panel_stats.position = Vector2(20, 20)
 	panel_stats.custom_minimum_size = Vector2(200, 0)
-	root.add_child(panel_stats)
+	battle_ui_container.add_child(panel_stats)
 	
 	var vbox = VBoxContainer.new()
 	panel_stats.add_child(vbox)
@@ -106,7 +125,7 @@ func _setup_ui():
 	btn_end.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	btn_end.position = Vector2(-120, 20)
 	btn_end.pressed.connect(func(): end_turn_pressed.emit())
-	root.add_child(btn_end)
+	battle_ui_container.add_child(btn_end)
 
 	btn_toggle_states = Button.new()
 	btn_toggle_states.text = "Show States"
@@ -114,49 +133,82 @@ func _setup_ui():
 	btn_toggle_states.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	btn_toggle_states.position = Vector2(-240, 20) 
 	btn_toggle_states.pressed.connect(_on_toggle_states_pressed)
-	root.add_child(btn_toggle_states)
+	battle_ui_container.add_child(btn_toggle_states)
 
-	# 3. Action Bar
-	var hbox = HBoxContainer.new()
-	hbox.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	hbox.position = Vector2(0, -80)
-	hbox.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	hbox.add_theme_constant_override("separation", 10)
-	root.add_child(hbox)
+	# 3. Action Bar (Bottom Center)
+	var hbox_actions = HBoxContainer.new()
+	hbox_actions.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	hbox_actions.position = Vector2(0, -80)
+	hbox_actions.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	hbox_actions.add_theme_constant_override("separation", 10)
+	battle_ui_container.add_child(hbox_actions)
 	
-	# Passive Button (Tooltip only)
 	btn_passive = Button.new()
 	btn_passive.text = "Passive"
 	btn_passive.custom_minimum_size = Vector2(100, 50)
-	hbox.add_child(btn_passive)
+	hbox_actions.add_child(btn_passive)
 	
-	btn_basic = _create_action_btn("Basic Atk", "BASIC", hbox)
-	btn_adv = _create_action_btn("Skill (2 Qi)", "ADVANCED", hbox)
-	btn_ult = _create_action_btn("Ult (5 Qi)", "ULTIMATE", hbox)
+	btn_basic = _create_action_btn("Basic Atk", "BASIC", hbox_actions)
+	btn_adv = _create_action_btn("Skill (2 Qi)", "ADVANCED", hbox_actions)
+	btn_ult = _create_action_btn("Ult (5 Qi)", "ULTIMATE", hbox_actions)
 
-	# 4. Combat Log (Adjusted Positioning)
-	var panel_log = PanelContainer.new()
-	# Anchor to Bottom Left specifically
+	# 5. Timeline
+	var timeline_bg = ColorRect.new()
+	timeline_bg.color = Color(0, 0, 0, 0.5)
+	timeline_bg.custom_minimum_size = Vector2(400, 4)
+	timeline_bg.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	timeline_bg.position.y = 45 
+	battle_ui_container.add_child(timeline_bg)
+
+	hbox_turn_queue = HBoxContainer.new()
+	hbox_turn_queue.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	hbox_turn_queue.position.y = 20
+	hbox_turn_queue.add_theme_constant_override("separation", 10)
+	battle_ui_container.add_child(hbox_turn_queue)
+
+	# --- DEPLOYMENT UI ---
+	deployment_panel = PanelContainer.new()
+	deployment_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	deployment_panel.custom_minimum_size = Vector2(0, 160)
+	deployment_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	root.add_child(deployment_panel)
+	
+	var vbox_deploy = VBoxContainer.new()
+	deployment_panel.add_child(vbox_deploy)
+	
+	var lbl_deploy = Label.new()
+	lbl_deploy.text = "Deployment Phase: Click hero then click grid to place"
+	lbl_deploy.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox_deploy.add_child(lbl_deploy)
+	
+	hbox_bench = HBoxContainer.new()
+	hbox_bench.alignment = BoxContainer.ALIGNMENT_CENTER
+	hbox_bench.add_theme_constant_override("separation", 20)
+	hbox_bench.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox_deploy.add_child(hbox_bench)
+	
+	btn_start_battle = Button.new()
+	btn_start_battle.text = "Start Battle"
+	btn_start_battle.custom_minimum_size = Vector2(150, 40)
+	btn_start_battle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn_start_battle.disabled = true 
+	btn_start_battle.pressed.connect(func(): start_battle_pressed.emit())
+	vbox_deploy.add_child(btn_start_battle)
+
+	# 4. Combat Log
+	panel_log = PanelContainer.new()
 	panel_log.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	# Grow UP and RIGHT from the bottom-left corner
 	panel_log.grow_horizontal = Control.GROW_DIRECTION_END
 	panel_log.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	
-	# Offset Y by negative height to sit ON TOP of bottom edge, or 0 if anchored correctly to inside
-	# With PRESET_BOTTOM_LEFT, (0,0) is the bottom-left corner.
-	# We set offset to (0,0) to hug the corner tightly.
-	panel_log.position = Vector2(0, 0) 
-	# However, since we are growing upwards (negative Y), we might need to manually set position 
-	# OR rely on anchors. The safest way for "tucked in corner" in code is:
 	panel_log.anchor_left = 0.0
 	panel_log.anchor_top = 1.0
 	panel_log.anchor_right = 0.0
 	panel_log.anchor_bottom = 1.0
 	panel_log.offset_left = 0
-	panel_log.offset_top = -180 # Height of the log box
-	panel_log.offset_right = 360 # Width of the log box
+	panel_log.offset_top = -180 
+	panel_log.offset_right = 360 
 	panel_log.offset_bottom = 0
-	
+	panel_log.visible = false 
 	root.add_child(panel_log)
 	
 	log_box = TextEdit.new()
@@ -165,20 +217,6 @@ func _setup_ui():
 	log_box.text = "Welcome to Fractured Mandate.\n"
 	panel_log.add_child(log_box)
 
-	# 5. Timeline
-	var timeline_bg = ColorRect.new()
-	timeline_bg.color = Color(0, 0, 0, 0.5)
-	timeline_bg.custom_minimum_size = Vector2(400, 4)
-	timeline_bg.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	timeline_bg.position.y = 45 
-	root.add_child(timeline_bg)
-
-	hbox_turn_queue = HBoxContainer.new()
-	hbox_turn_queue.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	hbox_turn_queue.position.y = 20
-	hbox_turn_queue.add_theme_constant_override("separation", 10)
-	root.add_child(hbox_turn_queue)
-	
 	# 6. DETAILS POPUP
 	popup_details = Window.new()
 	popup_details.title = "Unit Details"
@@ -198,6 +236,96 @@ func _setup_ui():
 	lbl_details_content = RichTextLabel.new()
 	lbl_details_content.bbcode_enabled = true
 	margin.add_child(lbl_details_content)
+
+# --- DEPLOYMENT FUNCTIONS ---
+
+func setup_deployment_bench(roster_data: Array):
+	deployment_panel.visible = true
+	battle_ui_container.visible = false 
+	panel_log.visible = false 
+	selected_bench_hero_id = ""
+	
+	for child in hbox_bench.get_children():
+		child.queue_free()
+		
+	for hero_id in roster_data:
+		var slot = _create_bench_slot(hero_id)
+		hbox_bench.add_child(slot)
+		
+	_update_start_button(0, roster_data.size())
+
+func _create_bench_slot(hero_id: String) -> Control:
+	# Use a Button or Control that can handle input
+	var btn = Button.new()
+	btn.custom_minimum_size = Vector2(100, 120)
+	btn.toggle_mode = true # Allows "Selected" state visual
+	
+	# Connect click
+	btn.pressed.connect(func(): _on_bench_slot_pressed(btn, hero_id))
+	
+	var vbox = VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	# Make sure vbox doesn't block mouse
+	vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE 
+	vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	btn.add_child(vbox)
+	
+	# Sprite Display
+	var tex_rect = TextureRect.new()
+	tex_rect.custom_minimum_size = Vector2(64, 64)
+	tex_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tex_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tex_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	if UnitFactory.HERO_DB.has(hero_id):
+		var data = UnitFactory.HERO_DB[hero_id]
+		if data.has("texture") and data["texture"]:
+			tex_rect.texture = data["texture"]
+	
+	vbox.add_child(tex_rect)
+	
+	# Name Label
+	var lbl = Label.new()
+	lbl.text = _format_hero_name(hero_id)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.custom_minimum_size = Vector2(90, 0)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(lbl)
+	
+	return btn
+
+func _on_bench_slot_pressed(pressed_btn: Button, hero_id: String):
+	# Deselect others
+	for child in hbox_bench.get_children():
+		if child is Button and child != pressed_btn:
+			child.set_pressed_no_signal(false)
+	
+	# Toggle logic
+	if pressed_btn.button_pressed:
+		selected_bench_hero_id = hero_id
+		deployment_hero_selected.emit(hero_id)
+	else:
+		selected_bench_hero_id = ""
+		deployment_hero_selected.emit("")
+
+func _format_hero_name(id: String) -> String:
+	return id.capitalize().replace("_", " ")
+
+func update_deployment_status(current_count: int, max_count: int):
+	var percent = "%d / %d" % [current_count, max_count]
+	btn_start_battle.text = "Start Battle (" + percent + ")"
+	_update_start_button(current_count, max_count)
+
+func _update_start_button(current: int, max_allowed: int):
+	btn_start_battle.disabled = (current == 0)
+
+func hide_deployment_ui():
+	deployment_panel.visible = false
+	battle_ui_container.visible = true 
+	panel_log.visible = true 
+
+# --- EXISTING FUNCTIONS ---
 
 func _create_action_btn(text: String, mode: String, parent: Node) -> Button:
 	var btn = Button.new()
@@ -235,7 +363,6 @@ func update_stats(unit):
 		lbl_qi_text.text = ""
 		btn_details.disabled = true
 		
-		# Clear Tooltips
 		btn_passive.tooltip_text = ""
 		btn_basic.tooltip_text = ""
 		btn_adv.tooltip_text = ""
@@ -246,7 +373,6 @@ func update_stats(unit):
 	var hero_name = unit.get_meta("hero_id", "Unknown Unit")
 	lbl_name.text = "%s\n[%s]" % [hero_name, unit.unit_class]
 	
-	# Update Bars
 	bar_hp.max_value = unit.max_hp
 	bar_hp.value = unit.current_hp
 	lbl_hp_text.text = "%d / %d" % [unit.current_hp, unit.max_hp]

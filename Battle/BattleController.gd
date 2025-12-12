@@ -6,17 +6,29 @@ const ZONE_ROWS = 4
 const ZONE_COLS = 3
 const BASE_TILE_SIZE = 128.0
 
+# --- STATES ---
+enum BattleState { DEPLOYMENT, BATTLE_START, PLAYER_TURN, ENEMY_TURN, END }
+var current_state = BattleState.DEPLOYMENT
+
 @export var background_texture: Texture2D 
 var unit_scene = preload("res://Unit.tscn") 
 
-# Battle State
+# Battle Data
+var player_roster_data = ["LIU_BEI", "ZHAO_YUN"] # Defined Roster Array
+var deployed_units: Array = []
+var max_deployment_slots = 4
+
+# Selection / Dragging
 var selected_unit: Unit = null
 var active_skill_mode: String = "BASIC"
 var highlighted_moves: Array[Vector2i] = []
 var highlighted_attacks: Array[Vector2i] = []
 
+# Deployment Selection
+var selected_hero_id_for_deployment: String = ""
+
 # --- SUB-MANAGERS ---
-var battle_ui: BattleUI # RENAMED from GameUI
+var battle_ui: BattleUI 
 var ai_manager: AIManager
 var turn_manager: TurnManager
 var grid_manager: GridManager
@@ -33,11 +45,16 @@ func _ready():
 	board_renderer.setup(COLS, ROWS, ZONE_COLS, ZONE_ROWS)
 	add_child(board_renderer) 
 	
-	# UPDATED: Use BattleUI
 	battle_ui = BattleUI.new()
 	add_child(battle_ui)
 	battle_ui.action_mode_changed.connect(_on_ui_action_mode_changed)
 	battle_ui.end_turn_pressed.connect(func(): turn_manager.end_current_turn())
+	
+	# Connect UI Signals
+	if battle_ui.has_signal("start_battle_pressed"):
+		battle_ui.start_battle_pressed.connect(_on_start_battle_pressed)
+	if battle_ui.has_signal("deployment_hero_selected"):
+		battle_ui.deployment_hero_selected.connect(_on_deployment_hero_selected)
 	
 	ai_manager = AIManager.new()
 	add_child(ai_manager)
@@ -49,33 +66,95 @@ func _ready():
 	add_child(turn_manager)
 	turn_manager.turn_changed.connect(_on_active_unit_changed)
 	turn_manager.ai_turn_requested.connect(_on_ai_turn_requested)
-	
 	turn_manager.round_started.connect(_on_round_started)
 	
-	call_deferred("_setup_battle")
+	call_deferred("_setup_deployment_phase")
 
-func _setup_battle():
+func _setup_deployment_phase():
 	_on_viewport_resize()
 	
-	_spawn_unit(1, 2, TurnManager.TEAM_PLAYER, "ZHAO_YUN", 1)
+	# 1. Spawn Enemies (Fixed positions for now)
+	_spawn_unit_on_grid(9, 1, TurnManager.TEAM_ENEMY, "SOLDIER_DUMMY", 1)
+	_spawn_unit_on_grid(9, 2, TurnManager.TEAM_ENEMY, "SOLDIER_DUMMY", 2)
+	_spawn_unit_on_grid(10, 1, TurnManager.TEAM_ENEMY, "ARCHER_DUMMY", 1)
 	
-	_spawn_unit(9, 1, TurnManager.TEAM_ENEMY, "SOLDIER_DUMMY", 1)
-	_spawn_unit(9, 2, TurnManager.TEAM_ENEMY, "SOLDIER_DUMMY", 2)
-	_spawn_unit(9, 3, TurnManager.TEAM_ENEMY, "SOLDIER_DUMMY", 3)
+	# 2. Populate Player Bench (UI)
+	battle_ui.setup_deployment_bench(player_roster_data)
 	
-	_spawn_unit(10, 1, TurnManager.TEAM_ENEMY, "ARCHER_DUMMY", 1)
-	_spawn_unit(10, 2, TurnManager.TEAM_ENEMY, "ARCHER_DUMMY", 2)
-	_spawn_unit(10, 3, TurnManager.TEAM_ENEMY, "ARCHER_DUMMY", 3)
-	
-	check_synergies()
+	current_state = BattleState.DEPLOYMENT
+	battle_ui.log_message("--- DEPLOYMENT PHASE ---")
+	battle_ui.log_message("Select a hero from the bottom, then click a blue tile to place.")
 	_refresh_visuals()
+
+# Called when player clicks "Start Battle"
+func _on_start_battle_pressed():
+	if deployed_units.size() == 0:
+		battle_ui.log_message("You must deploy at least one hero!")
+		return
+		
+	current_state = BattleState.BATTLE_START
+	battle_ui.hide_deployment_ui() # Hide the bench
 	
+	battle_ui.log_message("--- BATTLE START ---")
+	
+	# Synergy Check
+	check_synergies()
+	
+	# Start Turn Manager
 	turn_manager.start_game(grid_manager.get_all_units())
 
-func _spawn_unit(x: int, y: int, team: String, hero_id: String, index: int = 1):
+func _on_deployment_hero_selected(hero_id: String):
+	selected_hero_id_for_deployment = hero_id
+	# battle_ui.log_message("Selected to deploy: " + hero_id)
+
+# --- DEPLOYMENT LOGIC ---
+
+# Attempt to place a unit from the bench onto the grid
+func try_deploy_unit(hero_id: String, target_cell: Vector2i) -> bool:
+	if current_state != BattleState.DEPLOYMENT: return false
+	
+	# Check if cell is valid player zone (Cols 0-2)
+	if target_cell.x < 0 or target_cell.x >= ZONE_COLS:
+		battle_ui.log_message("Invalid Deployment Zone!")
+		return false
+		
+	if target_cell.y < 0 or target_cell.y >= ROWS: return false
+	
+	# Check occupancy
+	if grid_manager.is_occupied(target_cell):
+		battle_ui.log_message("Cell occupied!")
+		return false
+		
+	# Check if this hero is already deployed (Unique heroes)
+	for u in deployed_units:
+		if u.get_meta("hero_id") == hero_id:
+			battle_ui.log_message("Hero already deployed! Move them instead.")
+			return false
+
+	# Spawn the actual unit on the grid
+	var unit = _spawn_unit_on_grid(target_cell.x, target_cell.y, TurnManager.TEAM_PLAYER, hero_id)
+	if unit:
+		deployed_units.append(unit)
+		battle_ui.update_deployment_status(deployed_units.size(), max_deployment_slots)
+		return true
+		
+	return false
+
+# Removing a unit (right click or drag back to bench?)
+func undeploy_unit(unit: Unit):
+	if current_state != BattleState.DEPLOYMENT: return
+	
+	grid_manager.remove_unit(unit)
+	deployed_units.erase(unit)
+	unit.queue_free()
+	battle_ui.update_deployment_status(deployed_units.size(), max_deployment_slots)
+
+# --- SPAWNING ---
+
+func _spawn_unit_on_grid(x: int, y: int, team: String, hero_id: String, index: int = 1) -> Unit:
 	var pos = Vector2i(x, y)
 	var unit = UnitFactory.create_unit(hero_id, team, pos, unit_scene)
-	if not unit: return
+	if not unit: return null
 	
 	if team == TurnManager.TEAM_ENEMY:
 		unit.name = "%s %d" % [unit.name, index]
@@ -87,16 +166,17 @@ func _spawn_unit(x: int, y: int, team: String, hero_id: String, index: int = 1):
 	unit.log_event.connect(_on_unit_log_event)
 	unit.tree_exiting.connect(func(): _on_unit_died(unit))
 	_scale_unit_sprite(unit)
+	return unit
 
 func _on_unit_died(unit: Unit):
 	if grid_manager:
 		grid_manager.remove_unit(unit)
 	_refresh_visuals()
-	
-	# Win/Loss Check
 	_check_game_over_condition()
 
 func _check_game_over_condition():
+	if current_state == BattleState.DEPLOYMENT: return # Don't lose during setup
+	
 	var all_units = grid_manager.get_all_units()
 	var player_alive = false
 	var enemy_alive = false
@@ -109,20 +189,21 @@ func _check_game_over_condition():
 				enemy_alive = true
 	
 	if not player_alive:
-		battle_ui.log_message("--- DEFEAT: All heroes have fallen! ---")
-		# Optional: Disable input or show game over screen here
+		battle_ui.log_message("--- DEFEAT ---")
 		set_process_unhandled_input(false)
-		
 	elif not enemy_alive:
-		battle_ui.log_message("--- VICTORY: All enemies defeated! ---")
-		# Optional: Show victory screen here
+		battle_ui.log_message("--- VICTORY ---")
 		set_process_unhandled_input(false)
+
+# --- SYNERGY CHECK ---
+func check_synergies():
+	# Placeholder
+	pass
 
 # --- TURN LOGIC ---
 
 func _on_round_started(round_num: int):
 	battle_ui.log_message("--- ROUND %d START ---" % round_num)
-	
 	for unit in grid_manager.get_all_units():
 		if is_instance_valid(unit):
 			unit.has_acted = false
@@ -151,15 +232,42 @@ func _on_ai_turn_requested(unit: Unit):
 	else:
 		turn_manager.end_current_turn()
 
-# --- INPUT (Player Turn Only) ---
+# --- INPUT HANDLING (Updated for Drag & Drop) ---
 
 func _unhandled_input(event):
+	# Handle Deployment Drag & Drop
+	if current_state == BattleState.DEPLOYMENT:
+		_handle_deployment_input(event)
+		return
+
+	# Normal Battle Input
 	if not turn_manager.is_player_turn(): return
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var clicked_cell = grid_manager.world_to_grid(event.position)
-		if clicked_cell.x >= 0 and clicked_cell.x < COLS and clicked_cell.y >= 0 and clicked_cell.y < ROWS:
+		if _is_valid_cell(clicked_cell):
 			handle_click(clicked_cell)
+
+func _handle_deployment_input(event):
+	if event is InputEventMouseButton:
+		var clicked_cell = grid_manager.world_to_grid(event.position)
+		
+		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+			# 1. Check if we have a hero selected from bench
+			if selected_hero_id_for_deployment != "":
+				try_deploy_unit(selected_hero_id_for_deployment, clicked_cell)
+				return # Handled placement
+			
+			# 2. Check if we clicked an existing unit on grid to select/move/undeploy
+			var unit = grid_manager.get_unit_at(clicked_cell)
+			if unit and unit.player_id == TurnManager.TEAM_PLAYER:
+				# Simple toggle for undeploy on click for now (or select for move)
+				# For simplicity: Click deployed unit to remove it
+				undeploy_unit(unit)
+				return
+
+func _is_valid_cell(cell: Vector2i) -> bool:
+	return cell.x >= 0 and cell.x < COLS and cell.y >= 0 and cell.y < ROWS
 
 func handle_click(cell: Vector2i):
 	var active_unit = turn_manager.get_current_unit()
@@ -192,10 +300,8 @@ func handle_click(cell: Vector2i):
 func _select_unit(unit: Unit):
 	selected_unit = unit
 	if active_skill_mode == "": active_skill_mode = "BASIC"
-	
 	battle_ui.update_stats(unit)
 	battle_ui.set_active_mode(active_skill_mode)
-	
 	highlighted_moves = get_valid_formation_moves(unit)
 	_refresh_highlights()
 	_refresh_visuals()
@@ -204,15 +310,10 @@ func _select_unit(unit: Unit):
 
 func perform_action(action_type: String, attacker: Unit, defender: Unit):
 	var success = false
-	if action_type == "BASIC":
-		success = attacker.try_use_basic_attack(defender)
-	elif action_type == "ADVANCED":
-		success = attacker.try_use_advanced_skill(defender, grid_manager.grid, COLS)
-	elif action_type == "ULTIMATE":
-		success = attacker.try_use_ultimate_skill(defender, grid_manager.grid, COLS)
-	
-	if success:
-		finalize_action(attacker)
+	if action_type == "BASIC": success = attacker.try_use_basic_attack(defender)
+	elif action_type == "ADVANCED": success = attacker.try_use_advanced_skill(defender, grid_manager.grid, COLS)
+	elif action_type == "ULTIMATE": success = attacker.try_use_ultimate_skill(defender, grid_manager.grid, COLS)
+	if success: finalize_action(attacker)
 
 func perform_support(healer: Unit, target: Unit):
 	target.current_hp = min(target.current_hp + 3, target.max_hp)
@@ -221,9 +322,7 @@ func perform_support(healer: Unit, target: Unit):
 func perform_formation_move(unit: Unit, target_cell: Vector2i):
 	if unit.current_qi <= 0: return
 	unit.current_qi -= 1
-	
 	var other_unit = grid_manager.get_unit_at(target_cell)
-	
 	if other_unit:
 		grid_manager.swap_units(unit, other_unit)
 		unit.position = grid_manager.grid_to_world(unit.grid_pos)
@@ -234,7 +333,6 @@ func perform_formation_move(unit: Unit, target_cell: Vector2i):
 		grid_manager.move_unit(unit, target_cell)
 		unit.position = grid_manager.grid_to_world(unit.grid_pos)
 		unit.z_index = unit.grid_pos.y
-	
 	highlighted_moves = get_valid_formation_moves(unit)
 	_refresh_highlights()
 	_refresh_visuals()
@@ -247,7 +345,6 @@ func finalize_action(unit: Unit):
 	highlighted_attacks = []
 	battle_ui.update_stats(null)
 	_refresh_visuals()
-	
 	turn_manager.end_current_turn()
 
 # --- UTILS ---
@@ -267,6 +364,12 @@ func _refresh_highlights():
 	highlighted_attacks = TargetingSystem.get_valid_attacks(selected_unit, grid_manager.grid, COLS)
 
 func _refresh_visuals():
+	# In deployment, highlight the spawn zone
+	if current_state == BattleState.DEPLOYMENT:
+		board_renderer.set_highlights(Vector2i(-1,-1), [], [])
+		# We could add a special 'deployment zone' highlight here if BoardRenderer supported it
+		return
+
 	var s_pos = selected_unit.grid_pos if selected_unit else Vector2i(-1, -1)
 	board_renderer.set_highlights(s_pos, highlighted_moves, highlighted_attacks)
 
@@ -276,7 +379,7 @@ func get_valid_formation_moves(unit: Unit) -> Array[Vector2i]:
 	var directions = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
 	for d in directions:
 		var target = unit.grid_pos + d
-		if target.x >= 0 and target.x < COLS and target.y >= 0 and target.y < ROWS:
+		if _is_valid_cell(target):
 			moves.append(target)
 	return moves
 
@@ -285,30 +388,20 @@ func _on_viewport_resize():
 	var margin_x = screen_size.x * 0.05
 	var margin_top = screen_size.y * 0.05
 	var margin_bottom = screen_size.y * 0.20 
-	
 	var available_w = screen_size.x - (margin_x * 2)
 	var available_h = screen_size.y - (margin_top + margin_bottom)
-	
 	var possible_tile_w = available_w / COLS
 	var possible_tile_h = available_h / ROWS
-	
 	var new_tile_size = min(possible_tile_w, possible_tile_h)
-	
 	var total_board_w = new_tile_size * COLS
 	var total_board_h = new_tile_size * ROWS
-	
-	var new_offset = Vector2(
-		(screen_size.x - total_board_w) / 2.0,
-		margin_top + ((available_h - total_board_h) / 2.0)
-	)
+	var new_offset = Vector2((screen_size.x - total_board_w) / 2.0, margin_top + ((available_h - total_board_h) / 2.0))
 	
 	if grid_manager:
 		grid_manager.tile_size = new_tile_size
 		grid_manager.board_offset = new_offset
-		
 	if board_renderer:
 		board_renderer.update_layout(new_tile_size, new_offset)
-	
 	if grid_manager:
 		for unit in grid_manager.get_all_units():
 			unit.position = grid_manager.grid_to_world(unit.grid_pos)
@@ -330,5 +423,3 @@ func _scale_unit_sprite(unit: Unit):
 	var visual_height = tex_size.y * final_scale
 	var vertical_shift = (visual_height - t_size) / 2.0
 	sprite.position.y = -vertical_shift / final_scale
-
-func check_synergies(): pass
